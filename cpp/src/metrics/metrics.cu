@@ -21,6 +21,7 @@
 #include "metrics/klDivergence.cuh"
 #include "metrics/randIndex.cuh"
 #include "metrics/silhouetteScore.cuh"
+#include "metrics/pairwiseDistance.cuh"
 #include "metrics/vMeasure.cuh"
 #include "score/scores.cuh"
 
@@ -121,6 +122,15 @@ float accuracy_score_py(const cumlHandle &handle, const int *predictions,
   return MLCommon::Score::accuracy_score(predictions, ref_predictions, n,
                                          handle.getDeviceAllocator(),
                                          handle.getStream());
+}
+
+void pairwiseDistance(const cumlHandle &handle, const double *x, const double *y, double *dist, int m,
+                      int n, int k, int metric) {
+  MLCommon::Metrics::pairwiseDistance(x, y, dist, m, n, k, metric, handle.getDeviceAllocator(), handle.getStream());
+}
+
+void pairwiseDistance(const cumlHandle &handle, const float *x, const float *y, float *dist, int m, int n, int k, int metric) {
+  MLCommon::Metrics::pairwiseDistance(x, y, dist, m, n, k, metric, handle.getDeviceAllocator(), handle.getStream());
 }
 
 }  // namespace Metrics
