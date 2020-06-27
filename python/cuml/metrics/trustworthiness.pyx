@@ -31,7 +31,7 @@ from cuml.common.handle cimport cumlHandle
 from cuml.common import get_cudf_column_ptr, get_dev_array_ptr, \
     input_to_dev_array
 
-cdef extern from "metrics/trustworthiness_c.h" namespace "MLCommon::Distance":
+cdef extern from "cuml/metrics/distance_types.h" namespace "MLCommon::Distance":
 
     ctypedef int DistanceType
     ctypedef DistanceType euclidean "(MLCommon::Distance::DistanceType)5"

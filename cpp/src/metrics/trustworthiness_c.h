@@ -14,24 +14,7 @@
  * limitations under the License.
  */
 
-namespace MLCommon {
-namespace Distance {
-enum DistanceType {
-  /** evaluate as dist_ij = sum(x_ik^2) + sum(y_ij)^2 - 2*sum(x_ik * y_jk) */
-  EucExpandedL2 = 0,
-  /** same as above, but inside the epilogue, perform square root operation */
-  EucExpandedL2Sqrt,
-  /** cosine distance */
-  EucExpandedCosine,
-  /** L1 distance */
-  EucUnexpandedL1,
-  /** evaluate as dist_ij += (x_ik - y-jk)^2 */
-  EucUnexpandedL2,
-  /** same as above, but inside the epilogue, perform square root operation */
-  EucUnexpandedL2Sqrt,
-};
-}
-};  // namespace MLCommon
+#include <cuml/metrics/distance_types.h>
 
 using namespace MLCommon::Distance;
 

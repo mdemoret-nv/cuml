@@ -30,10 +30,15 @@ from cuml.common import (get_cudf_column_ptr, get_dev_array_ptr,
                          input_to_cuml_array, CumlArray, logger, with_cupy_rmm)
 from cuml.metrics.cluster.utils import prepare_cluster_metric_inputs
 
-cdef extern from "metrics/trustworthiness_c.h" namespace "MLCommon::Distance":
+cdef extern from "cuml/metrics/distance_types.h" namespace "MLCommon::Distance":
 
-    ctypedef int DistanceType
-    ctypedef DistanceType euclidean "(MLCommon::Distance::DistanceType)5"
+    ctypedef enum DistanceType "MLCommon::Distance::DistanceType":
+        EucExpandedL2 "MLCommon::Distance::DistanceType::EucExpandedL2"
+        EucExpandedL2Sqrt "MLCommon::Distance::DistanceType::EucExpandedL2Sqrt"
+        EucExpandedCosine "MLCommon::Distance::DistanceType::EucExpandedCosine"
+        EucUnexpandedL1 "MLCommon::Distance::DistanceType::EucUnexpandedL1"
+        EucUnexpandedL2 "MLCommon::Distance::DistanceType::EucUnexpandedL2"
+        EucUnexpandedL2Sqrt "MLCommon::Distance::DistanceType::EucUnexpandedL2Sqrt"
 
 cdef extern from "cuml/metrics/metrics.hpp" namespace "ML::Metrics":
     void pairwiseDistance(const cumlHandle &handle, const double *x, const double *y, double *dist, int m,
@@ -56,19 +61,19 @@ def determine_metric(metric_str):
 
     # TODO: Pull int values from actual enum
     if metric_str == 'cityblock':
-        return 3
+        return DistanceType.EucUnexpandedL1
     elif metric_str == 'cosine':
-        return 2
+        return DistanceType.EucExpandedCosine
     elif metric_str == 'euclidean':
-        return 5
+        return DistanceType.EucUnexpandedL2Sqrt
     elif metric_str == 'haversine':
         raise ValueError(" The metric: '{}', is not supported at this time.".format(metric_str))
     elif metric_str == 'l2':
-        return 5
+        return DistanceType.EucUnexpandedL2Sqrt
     elif metric_str == 'l1':
-        return 3
+        return DistanceType.EucUnexpandedL1
     elif metric_str == 'manhattan':
-        return 3
+        return DistanceType.EucUnexpandedL1
     elif metric_str == 'nan_euclidean':
         raise ValueError(" The metric: '{}', is not supported at this time.".format(metric_str))
     else:
