@@ -16,7 +16,7 @@
 
 #include <cuml/metrics/distance_types.h>
 
-using namespace MLCommon::Distance;
+using namespace ML::Metrics;
 
 namespace ML {
 namespace Metrics {

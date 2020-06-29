@@ -16,10 +16,10 @@
 
 #pragma once
 
-namespace MLCommon {
-namespace Distance {
+namespace ML {
+namespace Metrics {
 
-/** enum to tell how to compute euclidean distance */
+/** enum to tell how to compute euclidean distance. Copied */
 enum DistanceType {
   /** evaluate as dist_ij = sum(x_ik^2) + sum(y_ij)^2 - 2*sum(x_ik * y_jk) */
   EucExpandedL2 = 0,
@@ -35,5 +35,5 @@ enum DistanceType {
   EucUnexpandedL2Sqrt = 5,
 };
 
-} // namespace Distance
-}; // namespace MLCommon
+} // namespace Metrics
+}; // namespace ML
