@@ -188,8 +188,8 @@ inline void knn_merge_parts(float *inK, int64_t *inV, float *outK,
    * @param metricArg metric argument to use. Corresponds to the p arg for lp norm
    * @param expanded_form whether or not lp variants should be reduced w/ lp-root
    */
-template <typename IntType = int,
-          ML::Distance::DistanceType DistanceType = ML::Distance::DistanceType::EucUnexpandedL2>
+template <typename IntType = int, ML::Distance::DistanceType DistanceType =
+                                    ML::Distance::DistanceType::EucUnexpandedL2>
 void brute_force_knn(std::vector<float *> &input, std::vector<int> &sizes,
                      IntType D, float *search_items, IntType n, int64_t *res_I,
                      float *res_D, IntType k,
