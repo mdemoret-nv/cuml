@@ -30,15 +30,15 @@ from cuml.common import (get_cudf_column_ptr, get_dev_array_ptr,
                          input_to_cuml_array, CumlArray, logger, with_cupy_rmm)
 from cuml.metrics.cluster.utils import prepare_cluster_metric_inputs
 
-cdef extern from "cuml/metrics/distance_types.h" namespace "ML::Metrics":
+cdef extern from "cuml/distance/distance_type.h" namespace "ML::Distance":
 
-    ctypedef enum DistanceType "ML::Metrics::DistanceType":
-        EucExpandedL2 "ML::Metrics::DistanceType::EucExpandedL2"
-        EucExpandedL2Sqrt "ML::Metrics::DistanceType::EucExpandedL2Sqrt"
-        EucExpandedCosine "ML::Metrics::DistanceType::EucExpandedCosine"
-        EucUnexpandedL1 "ML::Metrics::DistanceType::EucUnexpandedL1"
-        EucUnexpandedL2 "ML::Metrics::DistanceType::EucUnexpandedL2"
-        EucUnexpandedL2Sqrt "ML::Metrics::DistanceType::EucUnexpandedL2Sqrt"
+    cdef enum DistanceType:
+        EucExpandedL2 "ML::Distance::DistanceType::EucExpandedL2"
+        EucExpandedL2Sqrt "ML::Distance::DistanceType::EucExpandedL2Sqrt"
+        EucExpandedCosine "ML::Distance::DistanceType::EucExpandedCosine"
+        EucUnexpandedL1 "ML::Distance::DistanceType::EucUnexpandedL1"
+        EucUnexpandedL2 "ML::Distance::DistanceType::EucUnexpandedL2"
+        EucUnexpandedL2Sqrt "ML::Distance::DistanceType::EucUnexpandedL2Sqrt"
 
 cdef extern from "cuml/metrics/metrics.hpp" namespace "ML::Metrics":
     void pairwiseDistance(const cumlHandle &handle, const double *x, const double *y, double *dist, int m,

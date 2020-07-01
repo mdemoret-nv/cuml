@@ -15,14 +15,9 @@
  */
 
 #include <common/cudart_utils.h>
-#include <math.h>
-#include <algorithm>
-#include <cub/cub.cuh>
 #include <cuml/common/cuml_allocator.hpp>
 #include <distance/distance.cuh>
-#include <iostream>
 #include <linalg/binary_op.cuh>
-#include <numeric>
 #include "common/device_buffer.hpp"
 #include "cuda_utils.cuh"
 
@@ -54,7 +49,7 @@ void pairwiseDistance(const DataT *x, const DataT *y, DataT *dist, IndexT m,
   MLCommon::device_buffer<char> workspace(allocator, stream, 1);
 
   //Call the distance function
-  Distance::pairwiseDistance(x, y, dist, m, n, k, workspace, static_cast<Distance::DistanceType>(metric), stream, isRowMajor);
+  Distance::pairwiseDistance(x, y, dist, m, n, k, workspace, static_cast<ML::Distance::DistanceType>(metric), stream, isRowMajor);
 
   CUDA_CHECK(cudaStreamSynchronize(stream));
 }

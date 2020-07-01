@@ -131,9 +131,5 @@ void pairwiseDistance(const cumlHandle &handle, const float *x, const float *y, 
   MLCommon::Metrics::pairwiseDistance(x, y, dist, m, n, k, metric, handle.getDeviceAllocator(), handle.getStream(), isRowMajor);
 }
 
-void pairwiseDistance(const cumlHandle &handle, const float *x, const float *y, float *dist, int m, int n, int k, ML::Metrics::DistanceType metric, bool isRowMajor) {
-  MLCommon::Metrics::pairwiseDistance(x, y, dist, m, n, k, (int)metric, handle.getDeviceAllocator(), handle.getStream(), isRowMajor);
-}
-
 }  // namespace Metrics
 }  // namespace ML

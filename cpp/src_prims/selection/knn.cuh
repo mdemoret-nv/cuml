@@ -189,7 +189,7 @@ inline void knn_merge_parts(float *inK, int64_t *inV, float *outK,
    * @param expanded_form whether or not lp variants should be reduced w/ lp-root
    */
 template <typename IntType = int,
-          Distance::DistanceType DistanceType = Distance::EucUnexpandedL2>
+          ML::Distance::DistanceType DistanceType = ML::Distance::DistanceType::EucUnexpandedL2>
 void brute_force_knn(std::vector<float *> &input, std::vector<int> &sizes,
                      IntType D, float *search_items, IntType n, int64_t *res_I,
                      float *res_D, IntType k,
@@ -201,8 +201,8 @@ void brute_force_knn(std::vector<float *> &input, std::vector<int> &sizes,
                      std::vector<int64_t> *translations = nullptr,
                      ML::MetricType metric = ML::MetricType::METRIC_L2,
                      float metricArg = 0, bool expanded_form = false) {
-  ASSERT(DistanceType == Distance::EucUnexpandedL2 ||
-           DistanceType == Distance::EucUnexpandedL2Sqrt,
+  ASSERT(DistanceType == ML::Distance::DistanceType::EucUnexpandedL2 ||
+           DistanceType == ML::Distance::DistanceType::EucUnexpandedL2Sqrt,
          "Only EucUnexpandedL2Sqrt and EucUnexpandedL2 metrics are supported "
          "currently.");
 

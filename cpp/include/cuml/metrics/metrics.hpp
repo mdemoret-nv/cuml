@@ -17,7 +17,7 @@
 #pragma once
 
 #include <cuml/cuml.hpp>
-#include "distance_types.h"
+#include <cuml/distance/distance_type.h>
 
 namespace ML {
 
@@ -281,6 +281,6 @@ void pairwiseDistance(const cumlHandle &handle, const float *x, const float *y, 
                       int n, int k, int metric, bool isRowMajor = true);
 
 void pairwiseDistance(const cumlHandle &handle, const float *x, const float *y, float *dist, int m,
-                      int n, int k, ML::Metrics::DistanceType metric, bool isRowMajor = true);
+                      int n, int k, ML::Distance::DistanceType metric, bool isRowMajor = true);
 }  // namespace Metrics
 }  // namespace ML
