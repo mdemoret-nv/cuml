@@ -28,6 +28,7 @@ from cuml.common.memory_utils import with_cupy_rmm
 from cuml.common.memory_utils import _check_array_contiguity
 from numba import cuda
 
+import cuml.common.array
 
 cuml_array = namedtuple('cuml_array', 'array n_rows n_cols dtype')
 
@@ -35,6 +36,15 @@ cuml_array = namedtuple('cuml_array', 'array n_rows n_cols dtype')
 # in all algos. Github issue #1716
 inp_array = namedtuple('inp_array', 'array pointer n_rows n_cols dtype')
 
+_input_type_to_str = {
+    CumlArray: "cuml",
+    np.ndarray: "numpy",
+    cp.ndarray: "cupy",
+    cudf.Series: "cudf",
+    cudf.DataFrame: "cudf",
+    pd.Series: "numpy",
+    pd.DataFrame: "numpy"
+}
 
 def get_dev_array_ptr(ary):
     """
@@ -80,6 +90,10 @@ def get_supported_input_type(X):
         If the array-like object is supported, the type is returned.
         Otherwise, `None` is returned.
     """
+    # Check CumlArray first to shorten search time
+    if isinstance(X, CumlArray):
+        return CumlArray
+
     if (isinstance(X, cudf.Series)):
         if X.null_count != 0:
             return None
@@ -96,9 +110,6 @@ def get_supported_input_type(X):
     if isinstance(X, cudf.DataFrame):
         return cudf.DataFrame
 
-    if isinstance(X, CumlArray):
-        return CumlArray
-
     if hasattr(X, "__cuda_array_interface__"):
         return cp.ndarray
 
@@ -107,6 +118,15 @@ def get_supported_input_type(X):
 
     # Return None if this type isnt supported
     return None
+
+def determine_array_type(X):
+    if (X is None):
+        return None
+
+    # Get the generic type
+    gen_type = get_supported_input_type(X)
+
+    return None if gen_type is None else _input_type_to_str[gen_type]
 
 
 @with_cupy_rmm
@@ -274,6 +294,8 @@ def input_to_cuml_array(X, order='F', deepcopy=False,
                   "result in additional memory utilization.")
             X_m = cp.array(X_m, copy=False, order=order)
             X_m = CumlArray(data=X_m)
+
+    cuml.common.array._increment_from_array(determine_array_type(X))
 
     return cuml_array(array=X_m, n_rows=n_rows, n_cols=n_cols, dtype=X_m.dtype)
 

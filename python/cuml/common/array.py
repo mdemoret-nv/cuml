@@ -26,6 +26,24 @@ from cuml.common.memory_utils import _order_to_strides
 from cuml.common.memory_utils import _strides_to_order
 from numba import cuda
 
+import multiprocessing
+
+_array_manager = multiprocessing.Manager()
+
+_to_output_counts = _array_manager.dict()
+_from_array_counts = _array_manager.dict()
+_malloc_nbytes = _array_manager.Value(int, 0)
+_malloc_count = _array_manager.Value(int, 0)
+
+def _increment_to_output(output_type: str):
+    _to_output_counts[output_type] = _to_output_counts.setdefault(output_type, 0) + 1
+
+def _increment_from_array(output_type: str):
+    _from_array_counts[output_type] = _from_array_counts.setdefault(output_type, 0) + 1
+
+def _increment_malloc(nbytes: int):
+    _malloc_nbytes.set(_malloc_nbytes.get() + nbytes)
+    _malloc_count.set(_malloc_count.get() + 1)
 
 class CumlArray(Buffer):
 
@@ -223,6 +241,8 @@ class CumlArray(Buffer):
                 output_type = 'series'
             else:
                 output_type = 'dataframe'
+
+        _increment_to_output(output_type)
 
         if output_type == 'cupy':
             return cp.asarray(self, dtype=output_dtype)
