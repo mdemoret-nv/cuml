@@ -31,3 +31,22 @@ from cuml.metrics.confusion_matrix import confusion_matrix
 from cuml.metrics.cluster.entropy import cython_entropy as entropy
 from cuml.metrics.pairwise_distances import pairwise_distances, \
     PAIRWISE_DISTANCE_METRICS
+
+__all__ = [
+    "accuracy_score",
+    "adjusted_rand_score",
+    "completeness_score",
+    "confusion_matrix",
+    "entropy",
+    "homogeneity_score",
+    "log_loss",
+    "mean_absolute_error",
+    "mean_squared_error",
+    "mean_squared_log_error",
+    "mutual_info_score",
+    "pairwise_distances",
+    "precision_recall_curve",
+    "r2_score",
+    "roc_auc_score",
+    "trustworthiness",
+]

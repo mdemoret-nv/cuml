@@ -18,3 +18,9 @@ from cuml.random_projection.random_projection import GaussianRandomProjection
 from cuml.random_projection.random_projection import SparseRandomProjection
 from cuml.random_projection.random_projection import \
    johnson_lindenstrauss_min_dim
+
+__all__ = [
+    "GaussianRandomProjection",
+    "johnson_lindenstrauss_min_dim",
+    "SparseRandomProjection",
+]

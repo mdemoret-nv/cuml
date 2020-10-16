@@ -15,3 +15,7 @@
 #
 
 from cuml.experimental.decomposition.incremental_pca import IncrementalPCA
+
+__all__ = [
+    "IncrementalPCA",
+]

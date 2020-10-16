@@ -19,3 +19,11 @@ from cuml.metrics.cluster.homogeneity_score import homogeneity_score
 from cuml.metrics.cluster.completeness_score import completeness_score
 from cuml.metrics.cluster.mutual_info_score import mutual_info_score
 from cuml.metrics.cluster.entropy import cython_entropy as entropy
+
+__all__ = [
+    "adjusted_rand_score",
+    "completeness_score",
+    "entropy",
+    "homogeneity_score",
+    "mutual_info_score",
+]

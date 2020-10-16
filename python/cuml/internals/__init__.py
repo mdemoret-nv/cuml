@@ -15,3 +15,7 @@
 #
 
 from cuml.internals.internals import GraphBasedDimRedCallback
+
+__all__ = [
+    "GraphBasedDimRedCallback",
+]

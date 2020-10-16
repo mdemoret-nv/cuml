@@ -15,3 +15,7 @@
 #
 
 from cuml.naive_bayes.naive_bayes import MultinomialNB
+
+__all__ = [
+    "MultinomialNB",
+]

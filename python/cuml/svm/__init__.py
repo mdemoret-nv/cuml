@@ -15,3 +15,8 @@
 #
 from cuml.svm.svc import SVC
 from cuml.svm.svr import SVR
+
+__all__ = [
+    "SVC",
+    "SVR",
+]

@@ -16,3 +16,7 @@
 
 from cuml.fil.fil import ForestInference
 from cuml.fil import fil
+
+__all__ = [
+    "ForestInference",
+]

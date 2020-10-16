@@ -22,3 +22,13 @@ from cuml.linear_model.logistic_regression import LogisticRegression
 from cuml.linear_model.mbsgd_classifier import MBSGDClassifier
 from cuml.linear_model.mbsgd_regressor import MBSGDRegressor
 from cuml.linear_model.ridge import Ridge
+
+__all__ = [
+    "ElasticNet",
+    "Lasso",
+    "LinearRegression",
+    "LogisticRegression",
+    "MBSGDClassifier",
+    "MBSGDRegressor",
+    "Ridge",
+]

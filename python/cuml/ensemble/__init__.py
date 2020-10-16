@@ -19,3 +19,10 @@ from cuml.ensemble.randomforestclassifier import RandomForestClassifier
 from cuml.ensemble.randomforestregressor import RandomForestRegressor
 from cuml.ensemble.randomforest_common import _check_fil_parameter_validity, \
     _obtain_fil_model
+
+__all__ = [
+    "RandomForestClassifier",
+    "RandomForestRegressor",
+    "_check_fil_parameter_validity",
+    "_obtain_fil_model",
+]

@@ -17,3 +17,9 @@
 from cuml.prims.label.classlabels import make_monotonic  # NOQA
 from cuml.prims.label.classlabels import check_labels  # NOQA
 from cuml.prims.label.classlabels import invert_labels  # NOQA
+
+__all__ = [
+    "check_labels",
+    "invert_labels",
+    "make_monotonic",
+]

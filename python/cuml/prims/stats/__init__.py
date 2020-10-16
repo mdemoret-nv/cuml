@@ -15,3 +15,7 @@
 #
 
 from cuml.prims.stats.covariance import cov
+
+__all__ = [
+    "cov",
+]

@@ -30,3 +30,10 @@ VALID_METRICS = {"brute": set([
         "jensenshannon",
         "cosine", "correlation"
     ])}
+
+__all__ = [
+    "KNeighborsClassifier",
+    "KNeighborsRegressor",
+    "NearestNeighbors",
+    "kneighbors_graph",
+]

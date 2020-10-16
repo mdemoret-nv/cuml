@@ -16,3 +16,8 @@
 
 from cuml.cluster.dbscan import DBSCAN
 from cuml.cluster.kmeans import KMeans
+
+__all__ = [
+    "DBSCAN",
+    "KMeans",
+]
