@@ -39,7 +39,7 @@ def parse_args():
                            "been run once before running this script!")
     argparser.add_argument("-exe", type=str, default="clang-tidy",
                            help="Path to clang-tidy exe")
-    argparser.add_argument("-ignore", type=str, default="[.]cu$|examples/kmeans/",
+    argparser.add_argument("-ignore", type=str, default=None,
                            help="Regex used to ignore files from checking")
     argparser.add_argument("-select", type=str, default=None,
                            help="Regex used to select files for checking")
@@ -64,7 +64,7 @@ def parse_args():
     return args
 
 
-def get_all_commands(cdb):
+def get_all_commands(cdb) -> list:
     with open(cdb, "r") as fp:
         return json.load(fp)
 
@@ -157,7 +157,8 @@ def run_clang_tidy_command(tidy_cmd):
 def run_clang_tidy(cmd, args):
     command, is_cuda = get_tidy_args(cmd, args.exe)
     tidy_cmd = [args.exe,
-                "-header-filter='.*cuml/cpp/(src|include|bench|comms).*'",
+                "-fix-errors",
+                "-header-filter='{}/cpp/(src|include|bench|comms|build/raft).*'".format(os.path.abspath(os.curdir)),
                 cmd["file"], "--", ]
     tidy_cmd.extend(command)
     status = True
@@ -232,12 +233,26 @@ def run_tidy_for_all_files(args, all_files):
     return print_results()
 
 
+def check_if_string_in_file(file_name, string_to_search):
+    """ Check if any line in the file contains given string """
+    # Open the file in read only mode
+    with open(file_name, 'r') as read_obj:
+        # Read all lines in the file one by one
+        for line in read_obj:
+            # For each line, check if line contains the string
+            if string_to_search in line:
+                return True
+    return False
+
 def main():
     args = parse_args()
     # Attempt to making sure that we run this script from root of repo always
     if not os.path.exists(".git"):
         raise Exception("This needs to always be run from the root of repo")
     all_files = get_all_commands(args.cdb)
+
+    all_files = list(filter(lambda x: check_if_string_in_file(x["file"], "namespace raft {"), all_files))
+
     status = run_tidy_for_all_files(args, all_files)
     if not status:
         raise Exception("clang-tidy failed! Refer to the errors above.")
