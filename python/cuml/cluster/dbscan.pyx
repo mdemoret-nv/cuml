@@ -30,6 +30,7 @@ from cuml.common.base import Base
 from cuml.common.doc_utils import generate_docstring
 from cuml.raft.common.handle cimport handle_t
 from cuml.common import input_to_cuml_array
+from cuml.common import with_cupy_rmm
 
 from collections import defaultdict
 
@@ -207,6 +208,7 @@ class DBSCAN(Base):
             self.max_mbytes_per_batch = 0
 
     @generate_docstring(skip_parameters_heading=True)
+    @with_cupy_rmm
     def fit(self, X, out_dtype="int32"):
         """
         Perform DBSCAN clustering from features.

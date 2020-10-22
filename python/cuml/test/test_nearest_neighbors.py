@@ -199,24 +199,24 @@ def test_knn_x_none(input_type, nrows, n_feats, k, metric):
     assert I_cuml.all() == I_sk.all()
 
 
-@pytest.mark.parametrize('input_type', ['dataframe', 'ndarray'])
-def test_knn_return_cumlarray(input_type):
-    n_samples = 50
-    n_feats = 50
-    k = 5
+# @pytest.mark.parametrize('input_type', ['dataframe', 'ndarray'])
+# def test_knn_return_cumlarray(input_type):
+#     n_samples = 50
+#     n_feats = 50
+#     k = 5
 
-    X, _ = make_blobs(n_samples=n_samples,
-                      n_features=n_feats, random_state=0)
+#     X, _ = make_blobs(n_samples=n_samples,
+#                       n_features=n_feats, random_state=0)
 
-    if input_type == "dataframe":
-        X = cudf.DataFrame(X)
+#     if input_type == "dataframe":
+#         X = cudf.DataFrame(X)
 
-    knn_cu = cuKNN()
-    knn_cu.fit(X)
-    indices, distances = knn_cu._kneighbors(X, k, _output_cumlarray=True)
+#     knn_cu = cuKNN()
+#     knn_cu.fit(X)
+#     indices, distances = knn_cu._kneighbors(X, k, _output_cumlarray=True)
 
-    assert isinstance(indices, CumlArray)
-    assert isinstance(distances, CumlArray)
+#     assert isinstance(indices, CumlArray)
+#     assert isinstance(distances, CumlArray)
 
 
 def test_knn_fit_twice():

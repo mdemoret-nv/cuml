@@ -26,26 +26,7 @@ import numbers
 
 import rmm
 
-rmm.reinitialize(logging=True, log_file_name="test_log.txt")
-
-saved_allocator = rmm.rmm_cupy_allocator
-
-def counting_rmm_allocator(nbytes):
-
-    import cuml.common.array
-
-    cuml.common.array._increment_malloc(nbytes)
-
-    # if (global_output_type_data.root_cm is not None):
-
-    #     current_func = global_output_type_data.root_cm.get_current_func()
-
-    #     if (current_func):
-    #         print("{} Allocating {} bytes from {}:{}".format(repr(current_func), nbytes, current_func.func_code.co_filename, current_func.func_code.co_firstlineno))
-
-    return saved_allocator(nbytes)
-
-rmm.rmm_cupy_allocator = counting_rmm_allocator
+# rmm.reinitialize(logging=True, log_file_name="test_log.txt")
 
 
 # Stores incorrect uses of CumlArray on cuml.common.base.Base to print at the
@@ -79,9 +60,48 @@ def checked_isinstance(obj, class_name_dot_separated):
 
     return ret
 
+# Set a bad cupy allocator that will fail if rmm.rmm_cupy_allocator is not used
+def bad_allocator(nbytes):
+
+    assert False, "Using default cupy allocator instead of rmm.rmm_cupy_allocator"
+
+    return None
+
+
+
+saved_allocator = rmm.rmm_cupy_allocator
+
+def counting_rmm_allocator(nbytes):
+
+    import cuml.common.array
+
+    cuml.common.array._increment_malloc(nbytes)
+
+    # if (global_output_type_data.root_cm is not None):
+
+    #     current_func = global_output_type_data.root_cm.get_current_func()
+
+    #     if (current_func):
+    #         print("{} Allocating {} bytes from {}:{}".format(repr(current_func), nbytes, current_func.func_code.co_filename, current_func.func_code.co_firstlineno))
+
+    return saved_allocator(nbytes)
+
+rmm.rmm_cupy_allocator = counting_rmm_allocator
 
 def pytest_configure(config):
     cp.cuda.set_allocator(counting_rmm_allocator)
+
+@pytest.fixture(scope="function", autouse=True)
+def cupy_allocator_fixture():
+
+    # Disable creating cupy arrays
+    # cp.cuda.set_allocator(bad_allocator)
+    cp.cuda.set_allocator(counting_rmm_allocator)
+
+    yield
+
+    # Reset creating cupy arrays
+    cp.cuda.set_allocator(None)
 
 
 # Use the runtest_makereport hook to get the result of the test. This is
@@ -136,6 +156,7 @@ def pytest_terminal_summary(terminalreporter, exitstatus: pytest.ExitCode, confi
     terminalreporter.write_line(str(cuml.common.array._from_array_counts))
 
     terminalreporter.write_line("RMM Malloc: Count={}, Size={}".format(cuml.common.array._malloc_count.get(), cuml.common.array._malloc_nbytes.get()))
+
 
 # Closing hook to display the file/line numbers at the end of the test
 def pytest_unconfigure(config):
@@ -234,7 +255,7 @@ def fail_on_bad_cuml_array_name(monkeypatch, request):
 
     # Monkeypatch CumlArray.__setattr__ to test for incorrect uses of
     # array-like objects
-    monkeypatch.setattr(Base, "__setattr__", patched__setattr__)
+    # monkeypatch.setattr(Base, "__setattr__", patched__setattr__)
 
 
 @pytest.fixture(scope="module")
