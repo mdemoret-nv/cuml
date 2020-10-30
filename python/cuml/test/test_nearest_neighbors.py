@@ -301,6 +301,22 @@ def test_knn_graph(input_type, nrows, n_feats, p, k, metric, mode,
         sparse_cu = cuml.neighbors.kneighbors_graph(X, k, mode, metric=metric,
                                                     p=p, include_self='auto',
                                                     output_type=output_type)
+
+        include_self = "auto"
+        
+        knn = cuKNN(k, False, None, "brute", metric, p,
+                         metric_params=None,
+                         output_type=output_type).fit(X)
+
+        if include_self == 'auto':
+            include_self = mode == 'connectivity'
+
+        if not include_self:
+            query = None
+        else:
+            query = knn.X_m
+
+        sparse_cu2 = knn.kneighbors_graph(X=query, n_neighbors=k, mode=mode)
     else:
         knn_cu = cuKNN(metric=metric, p=p, output_type=output_type)
         knn_cu.fit(X)

@@ -52,7 +52,7 @@ def global_output_type(request):
     yield output_type
 
     # Ensure we reset the type at the end of the test
-    cuml.set_global_output_type(None)
+    cuml.global_output_type = "input"
 
 ###############################################################################
 #                                    Tests                                    #

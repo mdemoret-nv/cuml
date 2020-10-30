@@ -14,24 +14,37 @@
 # limitations under the License.
 #
 
+import numbers
 import os
 import sys
+
 import cupy as cp
 import cupyx
 import pytest
+import rmm
 from pytest import Item
 from sklearn.datasets import fetch_20newsgroups
 from sklearn.feature_extraction.text import CountVectorizer
-import numbers
 
-import rmm
+callback_mr = rmm.mr.CallbackResourceAdaptor(
+    rmm.mr.get_current_device_resource(), None)
+
+rmm.mr.set_current_device_resource(callback_mr)
+
 
 # rmm.reinitialize(logging=True, log_file_name="test_log.txt")
-
 
 # Stores incorrect uses of CumlArray on cuml.common.base.Base to print at the
 # end
 bad_cuml_array_loc = set()
+
+test_memory_info = {
+    "total": {
+        "count": 0,
+        "peak": 0,
+        "nbytes": 0,
+    }
+}
 
 
 def checked_isinstance(obj, class_name_dot_separated):
@@ -60,16 +73,18 @@ def checked_isinstance(obj, class_name_dot_separated):
 
     return ret
 
+
 # Set a bad cupy allocator that will fail if rmm.rmm_cupy_allocator is not used
 def bad_allocator(nbytes):
 
-    assert False, "Using default cupy allocator instead of rmm.rmm_cupy_allocator"
+    assert False, \
+        "Using default cupy allocator instead of rmm.rmm_cupy_allocator"
 
     return None
 
 
-
 saved_allocator = rmm.rmm_cupy_allocator
+
 
 def counting_rmm_allocator(nbytes):
 
@@ -77,31 +92,83 @@ def counting_rmm_allocator(nbytes):
 
     cuml.common.array._increment_malloc(nbytes)
 
-    # if (global_output_type_data.root_cm is not None):
-
-    #     current_func = global_output_type_data.root_cm.get_current_func()
-
-    #     if (current_func):
-    #         print("{} Allocating {} bytes from {}:{}".format(repr(current_func), nbytes, current_func.func_code.co_filename, current_func.func_code.co_firstlineno))
-
     return saved_allocator(nbytes)
 
+
 rmm.rmm_cupy_allocator = counting_rmm_allocator
+
 
 def pytest_configure(config):
     cp.cuda.set_allocator(counting_rmm_allocator)
 
+
 @pytest.fixture(scope="function", autouse=True)
-def cupy_allocator_fixture():
+def cupy_allocator_fixture(request):
 
     # Disable creating cupy arrays
     # cp.cuda.set_allocator(bad_allocator)
     cp.cuda.set_allocator(counting_rmm_allocator)
 
+    allocations = {}
+    memory = {
+        "outstanding": 0,
+        "peak": 0,
+        "count": 0,
+        "nbytes": 0,
+    }
+
+    def print_mr(is_alloc: bool, mem_ptr, n_bytes: int, stream_ptr):
+        if (is_alloc):
+            # assert mem_ptr not in allocations
+            allocations[mem_ptr] = n_bytes
+            memory["outstanding"] += n_bytes
+            memory["peak"] = max(memory["outstanding"], memory["peak"])
+            memory["count"] += 1
+            memory["nbytes"] += n_bytes
+        else:
+            # assert mem_ptr in allocations
+            del allocations[mem_ptr]
+            memory["outstanding"] -= n_bytes
+
+    callback_mr.set_callback(print_mr)
+
+    # callback_mr = rmm.mr.CallbackResourceAdaptor(current_mr, print_mr)
+
+    # rmm.mr.set_current_device_resource(callback_mr)
+
     yield
+
+    import gc
+
+    gc.collect()
+
+    # assert len(allocations) == 0
+
+    # del memory["outstanding"]
+
+    test_memory_info[request.node.nodeid] = memory
+
+    test_memory_info["total"].update({
+        "count": test_memory_info["total"]["count"] + memory["count"],
+        "peak": max(test_memory_info["total"]["peak"], memory["peak"]),
+        "nbytes": test_memory_info["total"]["nbytes"] + memory["nbytes"],
+    })
 
     # Reset creating cupy arrays
     cp.cuda.set_allocator(None)
+
+
+# @pytest.fixture(scope="module", autouse=True)
+# def cuml_memory_per_module_fixture(request):
+
+#     # Disable creating cupy arrays
+#     # cp.cuda.set_allocator(bad_allocator)
+#     cp.cuda.set_allocator(counting_rmm_allocator)
+
+#     yield
+
+#     # Reset creating cupy arrays
+#     cp.cuda.set_allocator(None)
 
 
 # Use the runtest_makereport hook to get the result of the test. This is
@@ -155,12 +222,34 @@ def pytest_terminal_summary(terminalreporter, exitstatus: pytest.ExitCode, confi
     terminalreporter.write_line("From Array Counts:", yellow=True)
     terminalreporter.write_line(str(cuml.common.array._from_array_counts))
 
-    terminalreporter.write_line("RMM Malloc: Count={}, Size={}".format(cuml.common.array._malloc_count.get(), cuml.common.array._malloc_nbytes.get()))
+    terminalreporter.write_line("CuPy Malloc: Count={}, Size={}".format(
+        cuml.common.array._malloc_count.get(),
+        cuml.common.array._malloc_nbytes.get()))
+
+    have_outstanding = list(filter(lambda x: "outstanding" in x[1] and x[1]["outstanding"] > 0, test_memory_info.items()))
+
+    if (len(have_outstanding) > 0):
+        terminalreporter.write_line("Memory leak in the following tests:", red=True)
+
+        for key, memory in have_outstanding:
+            terminalreporter.write_line(key)
+
+    terminalreporter.write_line("Allocation Info: (test, peak, count)", yellow=True)
+
+    count = 0
+
+    for key, memory in sorted(test_memory_info.items(), key=lambda x: -x[1]["peak"]):
+        terminalreporter.write_line("Peak={}, NBytes={}, Count={}, Test={}".format(
+            memory["peak"], memory["nbytes"], memory["count"], key))
+        
+        # if (count > 50):
+        #     break
+
+        count += 1
 
 
 # Closing hook to display the file/line numbers at the end of the test
 def pytest_unconfigure(config):
-
     def split_exists(filename: str) -> bool:
         strip_colon = filename[:filename.rfind(":")]
         return os.path.exists(strip_colon)
@@ -192,8 +281,9 @@ def pytest_unconfigure(config):
 
             print("{} {}".format(combined_path, message))
 
-        print("See https://github.com/rapidsai/cuml/issues/2456#issuecomment-666106406" # noqa
-              " for more information on naming conventions")
+        print(
+            "See https://github.com/rapidsai/cuml/issues/2456#issuecomment-666106406"  # noqa
+            " for more information on naming conventions")
 
 
 # This fixture will monkeypatch cuml.common.base.Base to check for incorrect
