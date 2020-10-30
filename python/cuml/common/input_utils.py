@@ -18,17 +18,22 @@ import copy
 import cudf
 import cupy as cp
 import cupyx
+import numba.cuda
 import numpy as np
 import pandas as pd
 
 from collections import namedtuple
 from cuml.common import CumlArray
+from cuml.common.import_utils import has_scipy
 from cuml.common.logger import debug
 from cuml.common.memory_utils import with_cupy_rmm
 from cuml.common.memory_utils import _check_array_contiguity
 from numba import cuda
 
 import cuml.common.array
+
+if has_scipy():
+    import scipy.sparse
 
 cuml_array = namedtuple('cuml_array', 'array n_rows n_cols dtype')
 
@@ -43,8 +48,17 @@ _input_type_to_str = {
     cudf.Series: "cudf",
     cudf.DataFrame: "cudf",
     pd.Series: "numpy",
-    pd.DataFrame: "numpy"
+    pd.DataFrame: "numpy",
+    numba.cuda.devicearray.DeviceNDArrayBase: "numba",
+    cupyx.scipy.sparse.spmatrix: "cupy",
 }
+
+
+if has_scipy():
+    _input_type_to_str.update({
+        scipy.sparse.spmatrix: "numpy",
+    })
+
 
 def get_dev_array_ptr(ary):
     """
@@ -110,14 +124,29 @@ def get_supported_input_type(X):
     if isinstance(X, cudf.DataFrame):
         return cudf.DataFrame
 
+    if numba.cuda.devicearray.is_cuda_ndarray(X):
+        return numba.cuda.devicearray.DeviceNDArrayBase
+
     if hasattr(X, "__cuda_array_interface__"):
         return cp.ndarray
 
     if hasattr(X, "__array_interface__"):
-        return np.ndarray
+        # For some reason, numpy scalar types also implement
+        # `__array_interface__`. See numpy.generic.__doc__. Exclude those types
+        # as well as np.dtypes
+        if (not isinstance(X, np.generic) and not isinstance(X, type)):
+            return np.ndarray
+
+    if cupyx.scipy.sparse.isspmatrix(X):
+        return cupyx.scipy.sparse.spmatrix
+
+    if has_scipy():
+        if (scipy.sparse.isspmatrix(X)):
+            return scipy.sparse.spmatrix
 
     # Return None if this type isnt supported
     return None
+
 
 def determine_array_type(X):
     if (X is None):
