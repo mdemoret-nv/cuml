@@ -14,6 +14,9 @@
 # limitations under the License.
 #
 
+from functools import wraps
+import multiprocessing
+import typing
 import _pytest.config
 import _pytest.python
 import _pytest.terminal
@@ -21,6 +24,8 @@ import cupy as cp
 import pytest
 import rmm
 import rmm._lib
+
+_F = typing.TypeVar("_F", bound=typing.Callable[..., typing.Any])
 
 # rmm.reinitialize(logging=True, log_file_name="test_log.txt")
 
@@ -37,6 +42,28 @@ test_memory_info = {
     }
 }
 
+_array_manager = multiprocessing.Manager()
+
+_to_output_counts = _array_manager.dict()
+_from_array_counts = _array_manager.dict()
+_malloc_nbytes = _array_manager.Value(int, 0)
+_malloc_count = _array_manager.Value(int, 0)
+
+
+def _increment_to_output(output_type: str):
+    _to_output_counts[output_type] = _to_output_counts.setdefault(
+        output_type, 0) + 1
+
+
+def _increment_from_array(output_type: str):
+    _from_array_counts[output_type] = _from_array_counts.setdefault(
+        output_type, 0) + 1
+
+
+def _increment_malloc(nbytes: int):
+    _malloc_nbytes.set(_malloc_nbytes.get() + nbytes)
+    _malloc_count.set(_malloc_count.get() + 1)
+
 
 # Set a bad cupy allocator that will fail if rmm.rmm_cupy_allocator is not used
 def bad_allocator(nbytes):
@@ -52,9 +79,7 @@ saved_allocator = rmm.rmm_cupy_allocator
 
 def counting_rmm_allocator(nbytes):
 
-    import cuml.common.array
-
-    cuml.common.array._increment_malloc(nbytes)
+    _increment_malloc(nbytes)
 
     return saved_allocator(nbytes)
 
@@ -64,6 +89,37 @@ rmm.rmm_cupy_allocator = counting_rmm_allocator
 
 def pytest_configure(config):
     cp.cuda.set_allocator(counting_rmm_allocator)
+
+    import cuml.common.array
+    import cuml.common.input_utils
+
+    def tracked_to_output(func: _F) -> _F:
+        @wraps(func)
+        def inner(self, output_type='cupy', output_dtype=None):
+
+            _increment_to_output(output_type)
+
+            return func(self,
+                        output_type=output_type,
+                        output_dtype=output_dtype)
+
+        return inner
+
+    def tracked_input_to_cuml_array(func: _F) -> _F:
+        @wraps(func)
+        def inner(X, *args, **kwargs):
+
+            _increment_from_array(
+                cuml.common.input_utils.determine_array_type(X))
+
+            return func(X, *args, **kwargs)
+
+        return inner
+
+    cuml.common.array.CumlArray.to_output = tracked_to_output(
+        cuml.common.array.CumlArray.to_output)
+    cuml.common.input_utils.input_to_cuml_array = tracked_input_to_cuml_array(
+        cuml.common.input_utils.input_to_cuml_array)
 
 
 @pytest.fixture(scope="function", autouse=True)
@@ -142,17 +198,14 @@ def pytest_terminal_summary(
 
     terminalreporter.write_sep("=", "CumlArray Summary")
 
-    import cuml.common.array
-
     terminalreporter.write_line("To Output Counts:", yellow=True)
-    terminalreporter.write_line(str(cuml.common.array._to_output_counts))
+    terminalreporter.write_line(str(_to_output_counts))
 
     terminalreporter.write_line("From Array Counts:", yellow=True)
-    terminalreporter.write_line(str(cuml.common.array._from_array_counts))
+    terminalreporter.write_line(str(_from_array_counts))
 
     terminalreporter.write_line("CuPy Malloc: Count={}, Size={}".format(
-        cuml.common.array._malloc_count.get(),
-        cuml.common.array._malloc_nbytes.get()))
+        _malloc_count.get(), _malloc_nbytes.get()))
 
     have_outstanding = list(
         filter(lambda x: "outstanding" in x[1] and x[1]["outstanding"] > 0,
