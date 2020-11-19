@@ -52,7 +52,7 @@ def global_output_type(request):
     yield output_type
 
     # Ensure we reset the type at the end of the test
-    cuml.global_output_type = "input"
+    cuml.set_global_output_type(None)
 
 ###############################################################################
 #                                    Tests                                    #
@@ -75,7 +75,6 @@ def test_default_global_output_type(input_type):
         assert isinstance(res, test_output_types[input_type])
 
 
-# @pytest.mark.parametrize('global_type', global_input_configs)
 @pytest.mark.parametrize('input_type', global_input_types)
 def test_global_output_type(global_output_type, input_type):
     dataset = get_small_dataset(input_type)
@@ -93,7 +92,6 @@ def test_global_output_type(global_output_type, input_type):
         assert isinstance(res, test_output_types[global_output_type])
 
 
-# @pytest.mark.parametrize('global_type', global_input_configs)
 @pytest.mark.parametrize('context_type', global_input_configs)
 def test_output_type_context_mgr(global_output_type, context_type):
     dataset = get_small_dataset('numba')
@@ -120,9 +118,6 @@ def test_output_type_context_mgr(global_output_type, context_type):
 
     res = dbscan_float.labels_
     assert isinstance(res, test_output_types[test_type])
-
-    # # reset cuml global output type to 'input' for further tests
-    # cuml.set_global_output_type('input')
 
 
 ###############################################################################
