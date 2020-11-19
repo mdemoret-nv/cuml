@@ -246,6 +246,7 @@ if completeBuild || hasArg cuml || hasArg pydocs; then
         python setup.py build_ext -j${PARALLEL_LEVEL:-1} ${CUML_EXTRA_PYTHON_ARGS} --library-dir=${LIBCUML_BUILD_DIR} install --single-version-externally-managed --record=record.txt
     else
         python setup.py build_ext -j${PARALLEL_LEVEL:-1} ${CUML_EXTRA_PYTHON_ARGS} --library-dir=${LIBCUML_BUILD_DIR}
+        pip install -e .
     fi
 
     if hasArg pydocs; then

@@ -189,8 +189,7 @@ class cuml_build(_build):
                       ],
                       libraries=libs,
                       language='c++',
-                      extra_compile_args=['-std=c++14'],
-                      define_macros=[("CYTHON_TRACE_NOGIL", 1)])
+                      extra_compile_args=['-std=c++14'])
         ]
 
         self.distribution.ext_modules = extensions
@@ -262,4 +261,12 @@ setup(name='cuml',
       install_requires=install_requires,
       license="Apache",
       cmdclass=cmdclass,
-      zip_safe=False)
+      zip_safe=False,
+      # the following makes a plugin available to pytest
+      entry_points={
+          'pytest11': [
+              "quickrun_plugin = cuml.test.plugins.quick_run_plugin",
+            #   "memory_checker = cuml.test.plugins.check_memory_plugin",
+              "profiling_plugin = cuml.test.plugins.profiling_plugin",
+          ]
+      },)

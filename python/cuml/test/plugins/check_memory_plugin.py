@@ -131,6 +131,13 @@ rmm.rmm_cupy_allocator = counting_rmm_allocator
 
 
 def pytest_configure(config):
+
+    is_enabled = any(config.getvalue(x) for x in ('check_memory'))
+
+    # Exit early if we arent enabled
+    if not is_enabled:
+        return
+
     cp.cuda.set_allocator(counting_rmm_allocator)
 
     import cuml.common.array

@@ -17,8 +17,7 @@
 import pytest
 
 # Add the import here for any plugins that should be loaded EVERY TIME
-pytest_plugins = ("cuml.test.plugins.profiling_plugin",
-                  "cuml.test.plugins.quick_run_plugin")
+# pytest_plugins = ("cuml.test.plugins.quick_run_plugin")
 
 
 def pytest_addoption(parser):
@@ -49,23 +48,23 @@ def pytest_addoption(parser):
         help=("Runs tests marked with 'unit'. These are the quickest tests "
               "that are focused on accuracy and correctness."))
 
-    group.addoption(
-        "--check_memory",
-        action="store_true",
-        default=False,
-        help=("Adds a memory checker plugin that reports tests with memory "
-              "leaks"))
+    # group.addoption(
+    #     "--check_memory",
+    #     action="store_true",
+    #     default=False,
+    #     help=("Adds a memory checker plugin that reports tests with memory "
+    #           "leaks"))
 
 
-def pytest_configure(config):
-    # Import the check memory plugin if specified (better than always importing
-    # it)
-    use_check_memory = config.getoption("--check_memory")
+# def pytest_configure(config):
+#     # Import the check memory plugin if specified (better than always importing
+#     # it)
+#     use_check_memory = config.getoption("--check_memory")
 
-    plugin_name = "cuml.test.plugins.check_memory_plugin"
+#     plugin_name = "cuml.test.plugins.check_memory_plugin"
 
-    if use_check_memory and not config.pluginmanager.has_plugin(plugin_name):
-        config.pluginmanager.import_plugin(plugin_name)
+#     if use_check_memory and not config.pluginmanager.has_plugin(plugin_name):
+#         config.pluginmanager.import_plugin(plugin_name)
 
 
 def pytest_collection_modifyitems(config, items):
