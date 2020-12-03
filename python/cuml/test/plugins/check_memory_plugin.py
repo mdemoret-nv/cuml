@@ -19,6 +19,7 @@ import typing
 from copy import deepcopy
 from functools import wraps
 import regex
+import json
 
 import _pytest.config
 import _pytest.python
@@ -124,6 +125,35 @@ class MemoryNode:
             total = _add_dict(total, child.cupy_alloc_info)
 
         return total
+
+    @property
+    def has_children(self):
+        return len(self._children) > 0
+
+    def __getstate__(self):
+        # Set the order of the elements
+        state = {
+            "name": self.name,
+            "peak": 0,
+            "nbytes": 0,
+            "outstanding": 0,
+            "count": 0,
+        }
+
+        # Update with actual values
+        state.update(self.rmm_alloc_info)
+
+        # Delete the 0 values
+        state = {k: v for k, v in state.items() if v != 0}
+
+        if (self.has_children):
+            state["children"] = {
+                key: child.__getstate__()
+                for key,
+                child in self._children.items()
+            }
+
+        return state
 
     def get_child(self, full_name: str) -> "MemoryNode":
 
@@ -238,13 +268,102 @@ def pytest_configure(config: _pytest.config.Config):
     config.pluginmanager.register(plugin_instance, "_check_memory_plugin")
 
 
+def print_node(node_memory: MemoryNode,
+               print_fn: typing.Callable,
+               markup_fn=lambda s,
+               **colors: s,
+               leaf_lines=True,
+               state: dict = {
+                   "indent": 0,
+                   "empty_cols": [],
+                   "is_last": True,
+                   "child_min_name": 0
+               }):
+
+    # Save the state values as they come in
+    indent = state["indent"]
+    empty_cols = state["empty_cols"]
+    is_last = state["is_last"]
+    child_min_name = state["child_min_name"]
+
+    has_children = node_memory.has_children
+
+    to_print = node_memory._name
+
+    # Append some spaces if necessary
+    if (len(to_print) < child_min_name):
+        to_print += " " * (child_min_name - len(to_print))
+
+    to_print = markup_fn(to_print, bold=True, cyan=True)
+
+    alloc_info = node_memory.rmm_alloc_info
+
+    if (has_children or not leaf_lines):
+        to_print += markup_fn(" = Peak={:,}".format(alloc_info["peak"]))
+        to_print += markup_fn(", NBytes={:,}, Count={:,}".format(
+            alloc_info["nbytes"], alloc_info["count"]),
+                              light=True)
+
+    print_fn(to_print, indent, empty_cols, is_last)
+
+    # Now, if we have children, process those
+    if (has_children):
+
+        # Determine the longest childs name
+        state["child_min_name"] = 0
+
+        for c in node_memory._children.keys():
+            state["child_min_name"] = max(state["child_min_name"], len(c))
+
+        state["indent"] += 1
+
+        sorted_children = sorted(node_memory._children.values(),
+                                 key=lambda x: -x.rmm_alloc_info["peak"])
+
+        for idx, child in enumerate(sorted_children):
+
+            if state["is_last"]:
+                state["empty_cols"].append(indent)
+
+            state["is_last"] = True if idx == len(
+                node_memory._children) - 1 else False
+
+            state = print_node(
+                child,
+                print_fn=print_fn,
+                markup_fn=markup_fn,
+                leaf_lines=leaf_lines,
+                state=state,
+            )
+    else:
+
+        if (leaf_lines):
+            print_fn(markup_fn(str(alloc_info), light=True),
+                     indent + 1,
+                     empty_cols + [indent] if is_last else empty_cols,
+                     True)
+
+    if (is_last and indent != 0):
+
+        state["indent"] -= 1
+
+        if indent in empty_cols:
+            state["empty_cols"].remove(indent)
+
+        state["is_last"] = False
+
+    # Always restore the min_name
+    state["child_min_name"] = child_min_name
+
+    return state
+
+
 class CheckMemoryPlugin(object):
     def __init__(self):
 
-        pool_mr = rmm.mr.PoolMemoryResource(rmm.mr.get_current_device_resource())
-
         # Create a global tracking MR to watch all allocations
-        self.global_tracked_mr = rmm.mr.TrackingMemoryResource(pool_mr)
+        self.global_tracked_mr = rmm.mr.TrackingMemoryResource(
+            rmm.mr.get_current_device_resource())
 
         rmm.mr.set_current_device_resource(self.global_tracked_mr)
 
@@ -471,12 +590,6 @@ class CheckMemoryPlugin(object):
         terminalreporter.write_line("Allocation Info: (test, peak, count)",
                                     yellow=True)
 
-        count = 0
-
-        root_state = {"indent": 0, "empty_cols": [], "is_last": True}
-
-        markup = terminalreporter._tw.markup
-
         def _print_line(string: str,
                         indent: int,
                         empty_cols: list,
@@ -501,64 +614,12 @@ class CheckMemoryPlugin(object):
 
             terminalreporter.line("")
 
-        def print_node(node_memory: MemoryNode, state: dict):
-
-            indent = state["indent"]
-            empty_cols = state["empty_cols"]
-            is_last = state["is_last"]
-
-            has_children = len(node_memory._children) > 0
-
-            to_print = markup(node_memory._name, bold=True, cyan=True)
-
-            alloc_info = node_memory.rmm_alloc_info
-
-            if (has_children):
-                to_print += markup(" = Peak={:,}".format(alloc_info["peak"]))
-                to_print += markup(", NBytes={:,}, Count={:,}".format(
-                    alloc_info["nbytes"], alloc_info["count"]),
-                                   light=True)
-
-            _print_line(to_print, indent, empty_cols, is_last)
-
-            # Now, if we have children, process those
-            if (has_children):
-                state["indent"] += 1
-
-                sorted_children = sorted(
-                    node_memory._children.values(),
-                    key=lambda x: -x.rmm_alloc_info["peak"])
-
-                for idx, child in enumerate(sorted_children):
-
-                    if state["is_last"]:
-                        state["empty_cols"].append(indent)
-
-                    state["is_last"] = True if idx == len(
-                        node_memory._children) - 1 else False
-
-                    state = print_node(child, state)
-            else:
-
-                _print_line(markup(str(alloc_info), light=True),
-                            indent + 1,
-                            empty_cols + [indent] if is_last else empty_cols,
-                            True)
-
-            if (is_last and indent != 0):
-
-                state["indent"] -= 1
-
-                if indent in empty_cols:
-                    state["empty_cols"].remove(indent)
-
-                state["is_last"] = False
-
-            return state
-
-        print_node(root_node, root_state)
+        print_node(root_node,
+                   print_fn=_print_line,
+                   markup_fn=terminalreporter._tw.markup)
 
         max_peak = 50
+        count = 0
 
         terminalreporter.write_sep(
             "_", "Largest Peak Allocations ({})".format(max_peak))
@@ -595,3 +656,32 @@ class CheckMemoryPlugin(object):
                 break
 
             count += 1
+
+    def pytest_sessionfinish(self, session, exitstatus):
+
+        # Write a summary json file
+        filename = "rmm_memory_output.txt"
+
+        with open(filename, 'w') as outfile:
+
+            def _print_line(string: str,
+                            indent: int,
+                            empty_cols: list,
+                            is_last: bool):
+
+                outfile.write("  " * indent)
+
+                outfile.write(string)
+
+                outfile.write("\n")
+
+            print_node(self.test_memory_info["root"],
+                       print_fn=_print_line,
+                       leaf_lines=False)
+
+            # json.dump(self.test_memory_info["root"],
+            #           outfile,
+            #           indent=2,
+            #           default=lambda x: x.__getstate__())
+
+        print("Wrote file")

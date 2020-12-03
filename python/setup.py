@@ -266,7 +266,7 @@ setup(name='cuml',
       entry_points={
           'pytest11': [
               "quickrun_plugin = cuml.test.plugins.quick_run_plugin",
-            #   "memory_checker = cuml.test.plugins.check_memory_plugin",
+              "memory_checker = cuml.test.plugins.check_memory_plugin",
               "profiling_plugin = cuml.test.plugins.profiling_plugin",
           ]
       },)

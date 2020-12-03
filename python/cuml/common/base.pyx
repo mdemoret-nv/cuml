@@ -162,6 +162,11 @@ class Base(metaclass=cuml.internals.BaseMetaClass):
         self.handle = cuml.raft.common.handle.Handle() if handle is None \
             else handle
 
+        # if (handle is None):
+        #     # TEMP: create a single user stream
+        #     self._stream = cuml.cuda.Stream()
+        #     self.handle.setStream(self._stream)
+
         # Internally, self.verbose follows the spdlog/c++ standard of
         # 0 is most logging, and logging decreases from there.
         # So if the user passes an int value for logging, we convert it.
@@ -347,6 +352,10 @@ class Base(metaclass=cuml.internals.BaseMetaClass):
             self.n_features_in_ = X
         else:
             self.n_features_in_ = X.shape[1]
+
+    def time_handle_sync(self):
+        # Allow us to measure this time
+        self.handle.sync()
 
 
 class RegressorMixin:
