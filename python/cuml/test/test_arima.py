@@ -170,16 +170,8 @@ test_data = [
     ((1, 0, 1, 1, 1, 1, 4, 0), test_101_111_4),
     ((1, 1, 1, 2, 0, 0, 4, 1), test_111_200_4c),
     ((1, 1, 2, 0, 1, 2, 4, 0), test_112_012_4),
-    stress_param((1, 1, 1, 1, 1, 1, 12, 0), test_111_111_12),
+    # stress_param((1, 1, 1, 1, 1, 1, 12, 0), test_111_111_12),
 ]
-
-# Dictionary for lazy-loading of datasets
-# (name, dtype) -> (pandas dataframe, cuDF dataframe)
-lazy_data = {}
-
-# Dictionary for lazy-evaluation of reference fits
-# (p, d, q, P, D, Q, s, k, name, dtype) -> SARIMAXResults
-lazy_ref_fit = {}
 
 
 def extract_order(tup):
@@ -191,70 +183,140 @@ def extract_order(tup):
 data_path = os.path.join(os.path.dirname(
     os.path.abspath(__file__)), 'ts_datasets')
 
+@pytest.fixture(scope="module", params=test_data)
+def key_data(request):
+    return request.param
 
-def get_dataset(data, dtype):
-    """Load a dataset with a given dtype or return a previously loaded dataset
-    """
-    key = (data.dataset, np.dtype(dtype).name)
-    if key not in lazy_data:
+@pytest.fixture(scope="module", params=[np.float64])
+def dtype(request):
+    return request.param
+
+
+
+
+
+
+# # @pytest.fixture(scope="module")
+# def get_dataset():
+#     """Load a dataset with a given dtype or return a previously loaded dataset
+#     """
+
+#     # Dictionary for lazy-loading of datasets
+#     # (name, dtype) -> (pandas dataframe, cuDF dataframe)
+#     lazy_data = {}
+
+#     def _get_dataset(data, dtype):
+#         key = (data.dataset, np.dtype(dtype).name)
+#         if key not in lazy_data:
+#             y = pd.read_csv(
+#                 os.path.join(data_path, "{}.csv".format(data.dataset)),
+#                 usecols=range(1, data.batch_size + 1), dtype=dtype)
+#             y_cudf = cudf.from_pandas(y)
+#             return (y, y_cudf)
+#         return lazy_data[key]
+
+#     return _get_dataset
+
+# # @pytest.fixture(scope="module")
+# def get_ref_fit(get_dataset):
+
+#     # Dictionary for lazy-evaluation of reference fits
+#     # (p, d, q, P, D, Q, s, k, name, dtype) -> SARIMAXResults
+#     lazy_ref_fit = {}
+
+#     def _get_ref_fit(data, order, seasonal_order, intercept, dtype):
+#         """Compute a reference fit of a dataset with the given parameters and dtype
+#         or return a previously computed fit
+#         """
+#         y, _ = get_dataset(data, dtype)
+#         key = order + seasonal_order + \
+#             (intercept, data.dataset, np.dtype(dtype).name)
+#         if key not in lazy_ref_fit:
+#             ref_model = [sm.tsa.SARIMAX(y[col], order=order,
+#                                         seasonal_order=seasonal_order,
+#                                         trend='c' if intercept else 'n')
+#                         for col in y.columns]
+#             with warnings.catch_warnings():
+#                 warnings.filterwarnings("ignore")
+#                 lazy_ref_fit[key] = [model.fit(disp=0) for model in ref_model]
+#         return lazy_ref_fit[key]
+
+#     return _get_ref_fit
+
+@pytest.fixture(scope="module")
+def dataset(key_data, dtype):
+    # Split the tuple
+    key, data = key_data
+
+    order, seasonal_order, intercept = extract_order(key)
+
+    def _get_dataset():
+        key = (data.dataset, np.dtype(dtype).name)
         y = pd.read_csv(
             os.path.join(data_path, "{}.csv".format(data.dataset)),
             usecols=range(1, data.batch_size + 1), dtype=dtype)
         y_cudf = cudf.from_pandas(y)
-        lazy_data[key] = (y, y_cudf)
-    return lazy_data[key]
+        return (y, y_cudf)
 
+    y, y_cudf = _get_dataset()
 
-def get_ref_fit(data, order, seasonal_order, intercept, dtype):
-    """Compute a reference fit of a dataset with the given parameters and dtype
-    or return a previously computed fit
-    """
-    y, _ = get_dataset(data, dtype)
-    key = order + seasonal_order + \
-        (intercept, data.dataset, np.dtype(dtype).name)
-    if key not in lazy_ref_fit:
+    def _get_ref_fit():
+        """Compute a reference fit of a dataset with the given parameters and dtype
+        or return a previously computed fit
+        """
+        key = order + seasonal_order + \
+            (intercept, data.dataset, np.dtype(dtype).name)
         ref_model = [sm.tsa.SARIMAX(y[col], order=order,
                                     seasonal_order=seasonal_order,
                                     trend='c' if intercept else 'n')
-                     for col in y.columns]
+                    for col in y.columns]
         with warnings.catch_warnings():
             warnings.filterwarnings("ignore")
-            lazy_ref_fit[key] = [model.fit(disp=0) for model in ref_model]
-    return lazy_ref_fit[key]
+            return [model.fit(disp=0) for model in ref_model]
 
+    # Get fit reference model
+    ref_fits = _get_ref_fit()
+
+    return key, data, dtype, y, y_cudf, ref_fits, order, seasonal_order, intercept
 
 ###############################################################################
 #                                    Tests                                    #
 ###############################################################################
 
-@pytest.mark.parametrize('key, data', test_data)
-@pytest.mark.parametrize('dtype', [np.float64])
-def test_integration(key, data, dtype):
-    """Full integration test: estimate, fit, predict (in- and out-of-sample)
-    """
-    order, seasonal_order, intercept = extract_order(key)
+class TestArima:
+    # @pytest.mark.parametrize('key, data', test_data)
+    # @pytest.mark.parametrize('dtype', [np.float64])
+    def test_integration(self, dataset):
+        """Full integration test: estimate, fit, predict (in- and out-of-sample)
+        """
+        # order, seasonal_order, intercept = extract_order(key)
 
-    y, y_cudf = get_dataset(data, dtype)
+        # y, y_cudf = get_dataset(data, dtype)
 
-    # Get fit reference model
-    ref_fits = get_ref_fit(data, order, seasonal_order, intercept, dtype)
+        print(dummy)
 
-    # Create and fit cuML model
-    cuml_model = arima.ARIMA(y_cudf, order, seasonal_order,
-                             fit_intercept=intercept, output_type='numpy')
-    cuml_model.fit()
+        # # Get fit reference model
+        # ref_fits = get_ref_fit(data, order, seasonal_order, intercept, dtype)
 
-    # Predict
-    cuml_pred = cuml_model.predict(data.start, data.end)
-    ref_preds = np.zeros((data.end - data.start, data.batch_size))
-    for i in range(data.batch_size):
-        ref_preds[:, i] = ref_fits[i].get_prediction(
-            data.start, data.end - 1).predicted_mean
+        key, data, dtype, y, y_cudf, ref_fits, order, seasonal_order, intercept = dataset
 
-    # Compare results
-    np.testing.assert_allclose(cuml_pred, ref_preds,
-                               rtol=data.tolerance_integration,
-                               atol=data.tolerance_integration)
+        # Create and fit cuML model
+        cuml_model = arima.ARIMA(y_cudf, order, seasonal_order,
+                                fit_intercept=intercept, output_type='numpy')
+        cuml_model.fit()
+
+        # Predict
+        cuml_pred = cuml_model.predict(data.start, data.end)
+        ref_preds = np.zeros((data.end - data.start, data.batch_size))
+        for i in range(data.batch_size):
+            ref_preds[:, i] = ref_fits[i].get_prediction(
+                data.start, data.end - 1).predicted_mean
+
+        # Compare results
+        np.testing.assert_allclose(cuml_pred, ref_preds,
+                                rtol=data.tolerance_integration,
+                                atol=data.tolerance_integration)
+
 
 
 def _statsmodels_to_cuml(ref_fits, cuml_model, order, seasonal_order,
@@ -277,17 +339,19 @@ def _statsmodels_to_cuml(ref_fits, cuml_model, order, seasonal_order,
     cuml_model.unpack(x)
 
 
-def _predict_common(key, data, dtype, start, end, num_steps=None, level=None,
+def _predict_common(ds, start, end, num_steps=None, level=None,
                     simple_differencing=True):
     """Utility function used by test_predict and test_forecast to avoid
     code duplication.
     """
-    order, seasonal_order, intercept = extract_order(key)
+    # order, seasonal_order, intercept = extract_order(key)
 
-    y, y_cudf = get_dataset(data, dtype)
+    # y, y_cudf = get_dataset(data, dtype)
 
-    # Get fit reference model
-    ref_fits = get_ref_fit(data, order, seasonal_order, intercept, dtype)
+    # # Get fit reference model
+    # ref_fits = get_ref_fit(data, order, seasonal_order, intercept, dtype)
+
+    key, data, dtype, y, y_cudf, ref_fits, order, seasonal_order, intercept = ds
 
     # Create cuML model
     cuml_model = arima.ARIMA(y_cudf, order, seasonal_order,
@@ -330,57 +394,59 @@ def _predict_common(key, data, dtype, start, end, num_steps=None, level=None,
             cuml_upper, ref_upper, rtol=0.005, atol=0.01)
 
 
-@pytest.mark.parametrize('key, data', test_data)
-@pytest.mark.parametrize('dtype', [np.float64])
+# @pytest.mark.parametrize('key, data', test_data)
+# @pytest.mark.parametrize('dtype', [np.float64])
 @pytest.mark.parametrize('simple_differencing', [True, False])
-def test_predict(key, data, dtype, simple_differencing):
+def test_predict(key_data, dataset, simple_differencing):
     """Test in-sample prediction against statsmodels (with the same values
     for the model parameters)
     """
-    n_obs = data.n_obs
-    _predict_common(key, data, dtype, n_obs // 2, n_obs,
+    n_obs = key_data[1].n_obs
+    _predict_common(dataset, n_obs // 2, n_obs,
                     simple_differencing=simple_differencing)
 
 
-@pytest.mark.parametrize('key, data', test_data)
-@pytest.mark.parametrize('dtype', [np.float64])
+# @pytest.mark.parametrize('key, data', test_data)
+# @pytest.mark.parametrize('dtype', [np.float64])
 @pytest.mark.parametrize('num_steps', [10])
 @pytest.mark.parametrize('simple_differencing', [True, False])
-def test_forecast(key, data, dtype, num_steps, simple_differencing):
+def test_forecast(key_data, dataset, num_steps, simple_differencing):
     """Test out-of-sample forecasting against statsmodels (with the same
     values for the model parameters)
     """
-    n_obs = data.n_obs
-    _predict_common(key, data, dtype, n_obs, n_obs + num_steps, num_steps,
+    n_obs = key_data[1].n_obs
+    _predict_common(dataset, n_obs, n_obs + num_steps, num_steps,
                     simple_differencing=simple_differencing)
 
 
-@pytest.mark.parametrize('key, data', test_data)
-@pytest.mark.parametrize('dtype', [np.float64])
+# @pytest.mark.parametrize('key, data', test_data)
+# @pytest.mark.parametrize('dtype', [np.float64])
 @pytest.mark.parametrize('num_steps', [10])
 @pytest.mark.parametrize('level', [0.5, 0.95])
-def test_intervals(key, data, dtype, num_steps, level):
+def test_intervals(key_data, dataset, num_steps, level):
     """Test forecast confidence intervals against statsmodels (with the same
     values for the model parameters)
     """
-    n_obs = data.n_obs
-    _predict_common(key, data, dtype, n_obs, n_obs + num_steps, num_steps,
+    n_obs = key_data[1].n_obs
+    _predict_common(dataset, n_obs, n_obs + num_steps, num_steps,
                     level)
 
 
-@pytest.mark.parametrize('key, data', test_data)
-@pytest.mark.parametrize('dtype', [np.float64])
+# @pytest.mark.parametrize('key, data', test_data)
+# @pytest.mark.parametrize('dtype', [np.float64])
 @pytest.mark.parametrize('simple_differencing', [True, False])
-def test_loglikelihood(key, data, dtype, simple_differencing):
+def test_loglikelihood(dataset, simple_differencing):
     """Test loglikelihood against statsmodels (with the same values for the
     model parameters)
     """
-    order, seasonal_order, intercept = extract_order(key)
+    # order, seasonal_order, intercept = extract_order(key)
 
-    y, y_cudf = get_dataset(data, dtype)
+    # y, y_cudf = get_dataset(data, dtype)
 
-    # Get fit reference model
-    ref_fits = get_ref_fit(data, order, seasonal_order, intercept, dtype)
+    # # Get fit reference model
+    # ref_fits = get_ref_fit(data, order, seasonal_order, intercept, dtype)
+
+    key, data, dtype, y, y_cudf, ref_fits, order, seasonal_order, intercept = dataset
 
     # Create cuML model
     cuml_model = arima.ARIMA(
@@ -399,22 +465,22 @@ def test_loglikelihood(key, data, dtype, simple_differencing):
     np.testing.assert_allclose(cuml_llf, ref_llf, rtol=0.01, atol=0.01)
 
 
-@pytest.mark.parametrize('key, data', test_data)
-@pytest.mark.parametrize('dtype', [np.float64])
-def test_gradient(key, data, dtype):
+# @pytest.mark.parametrize('key, data', test_data)
+# @pytest.mark.parametrize('dtype', [np.float64])
+def test_gradient(dataset):
     """
     Test batched gradient implementation against scipy non-batched
     gradient.
 
     .. note:: it doesn't test that the loglikelihood is correct!
     """
-    order, seasonal_order, intercept = extract_order(key)
+    key, data, dtype, y, y_cudf, ref_fits, order, seasonal_order, intercept = dataset
     p, _, q = order
     P, _, Q, _ = seasonal_order
     N = p + P + q + Q + intercept + 1
     h = 1e-8
 
-    _, y_cudf = get_dataset(data, dtype)
+    # _, y_cudf = get_dataset(data, dtype)
 
     # Create cuML model
     cuml_model = arima.ARIMA(y_cudf, order, seasonal_order,
@@ -444,14 +510,16 @@ def test_gradient(key, data, dtype):
     np.testing.assert_allclose(batched_grad, scipy_grad, rtol=0.001, atol=0.01)
 
 
-@pytest.mark.parametrize('key, data', test_data)
-@pytest.mark.parametrize('dtype', [np.float64])
-def test_start_params(key, data, dtype):
+# @pytest.mark.parametrize('key, data', test_data)
+# @pytest.mark.parametrize('dtype', [np.float64])
+def test_start_params(dataset):
     """Test starting parameters against statsmodels
     """
-    order, seasonal_order, intercept = extract_order(key)
+    # order, seasonal_order, intercept = extract_order(key)
 
-    y, y_cudf = get_dataset(data, dtype)
+    # y, y_cudf = get_dataset(data, dtype)
+
+    key, data, dtype, y, y_cudf, ref_fits, order, seasonal_order, intercept = dataset
 
     # Create models
     cuml_model = arima.ARIMA(

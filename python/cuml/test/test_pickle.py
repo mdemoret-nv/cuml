@@ -321,7 +321,8 @@ def test_umap_pickle(tmpdir, datatype, keys):
 @pytest.mark.parametrize('keys', decomposition_models.keys())
 @pytest.mark.parametrize('data_size', [unit_param([500, 20, 10]),
                                        stress_param([500000, 1000, 500])])
-@pytest.mark.xfail
+@pytest.mark.xfail(raises=AssertionError)
+@pytest.mark.rmm_memleak
 def test_decomposition_pickle_xfail(tmpdir, datatype, keys, data_size):
     result = {}
 

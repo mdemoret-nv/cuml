@@ -13,22 +13,21 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 #
+import contextlib
 import datetime
-import dataclasses
+import gc
 import typing
 from copy import deepcopy
 from functools import wraps
-import regex
-import json
 
 import _pytest.config
+import _pytest.fixtures
+import _pytest.nodes
 import _pytest.python
 import _pytest.terminal
-import _pytest.nodes
-import cupy as cp
+import cupy
 import pytest
-import rmm
-import rmm._lib
+import regex
 from pygments import highlight
 from pygments.formatters.terminal import TerminalFormatter
 from pygments.lexers.python import PythonLexer
@@ -71,9 +70,15 @@ def _add_dict(dict1: dict, dict2: dict) -> dict:
 
 
 class MemoryNode:
-    def __init__(self, parent: "MemoryNode", name: str) -> None:
+    def __init__(self,
+                 parent: "MemoryNode",
+                 name: str,
+                 separator: str = None,
+                 sum_children=True) -> None:
         self._parent = parent
         self._name = name
+        self._separator = separator
+        self._sum_children = sum_children
 
         self._children: typing.Dict[str, MemoryNode] = {}
 
@@ -84,7 +89,7 @@ class MemoryNode:
 
     @property
     def name(self):
-        return self._parent.name + self._name
+        return self._parent.name + (self._parent._separator or "") + self._name
 
     @property
     def to_output_counts(self):
@@ -110,9 +115,10 @@ class MemoryNode:
     def rmm_alloc_info(self):
         total = self._rmm_alloc_info
 
-        for child in self._children.values():
+        if (self._sum_children):
+            for child in self._children.values():
 
-            total = _add_dict(total, child.rmm_alloc_info)
+                total = _add_dict(total, child.rmm_alloc_info)
 
         return total
 
@@ -170,6 +176,8 @@ class MemoryNode:
                                   full_name,
                                   pos=front_idx)
 
+        split_name = regex.split(r'([^/:\[\]]+|\[.+\])', full_name)
+
         if (node_match):
             remaining_name = full_name[:node_match.end()]
             # Get the child
@@ -179,39 +187,53 @@ class MemoryNode:
         else:
             # Need to find our direct child
             child_name = full_name[front_idx:]
+            sep = ""
+
+            sep_match = regex.search(r'(/|::)', child_name)
+
+            if (sep_match):
+                sep = child_name[sep_match.start():]
+                child_name = child_name[:sep_match.start()]
 
             if (child_name not in self._children):
-                self._children[child_name] = MemoryNode(parent=self,
-                                                        name=child_name)
+                self._children[child_name] = MemoryNode(
+                    parent=self,
+                    name=child_name,
+                    separator=sep,
+                    sum_children=self._sum_children)
 
             return self._children[child_name]
 
-        # # Now see if we need to make any intermediate nodes
-        # while (front_idx < len(full_name)):
-        #     next_idx = full_name.index(self._name)
+    def get_child2(self, full_name: str) -> "MemoryNode":
 
-        # # First, split off our own name if it is there
-        # if (name_segments.startswith(self._name)):
-        #     name_segments = name_segments[:len(self._name)]
+        # Break the name into sections indicating multiple levels of children
+        split_name = regex.split(r'([^/:\[\]]+|\[.+\])', full_name)
 
-        # if (isinstance(name_segments, str)):
-        #     if (name_segments not in self._children):
-        #         self._children[name_segments] = MemoryNode(parent=self,
-        #                                                    name=name_segments)
+        if (split_name):
+            # Found some separator. Build first childs name
+            child_name = split_name[1]
 
-        #     return self._children[name_segments]
+            if (child_name not in self._children):
 
-        # assert (isinstance(name_segments, list))
+                # Get our separator if needed
+                sep = split_name[0]
 
-        # # Must be a tuple. Pop the first item and recursively call
-        # first_segment = name_segments[0]
+                assert (self._separator is None or self._separator == sep)
 
-        # inner_child = self.get_child(first_segment)
+                self._separator = sep
 
-        # if (len(name_segments) > 1):
-        #     return inner_child.get_child(name_segments[1:])
+                # Add new child
+                self._children[child_name] = MemoryNode(
+                    parent=self,
+                    name=child_name,
+                    sum_children=self._sum_children)
 
-        # return inner_child
+            child = self._children[child_name]
+
+            if (len(split_name) > 3):
+                return child.get_child2("".join(split_name[2:]))
+
+            return child
 
     def increment_to_output(self, output_type: str):
         self._to_output_counts[
@@ -235,8 +257,8 @@ class MemoryNode:
 
 
 class RootMemoryNode(MemoryNode):
-    def __init__(self) -> None:
-        super().__init__(name="Root", parent=None)
+    def __init__(self, sum_children=True) -> None:
+        super().__init__(name="Root", parent=None, sum_children=sum_children)
 
     @property
     def name(self):
@@ -361,38 +383,45 @@ def print_node(node_memory: MemoryNode,
 class CheckMemoryPlugin(object):
     def __init__(self):
 
+        import cupy as cp
+        import rmm
+
         # Create a global tracking MR to watch all allocations
         self.global_tracked_mr = rmm.mr.TrackingMemoryResource(
             rmm.mr.get_current_device_resource())
 
         rmm.mr.set_current_device_resource(self.global_tracked_mr)
 
-        # Create the tracking classes
-        self.test_memory_info: typing.Dict[str, MemoryNode] = {
-            "root": RootMemoryNode()
-        }
+        self._root_node = RootMemoryNode()
 
-        self._total_memory_alloc = RootMemoryNode()
+        # Create the tracking classes
+        self._tracked_nodes: typing.List[str] = []
+
+        self.completed_modules: typing.Dict[str, MemoryNode] = {}
+        self.completed_tests: typing.Dict[str, MemoryNode] = {}
+
+        self._total_memory_alloc = RootMemoryNode(sum_children=False)
         self._test_memory_alloc: MemoryNode = None
 
-        # Monkeypatch the rmm cupy allocator to track allocations
-        saved_allocator = rmm.rmm_cupy_allocator
+        saved_self = self
 
-        def counting_rmm_allocator(nbytes):
+        def tracked_rmm_cupy_allocator(func: _F) -> _F:
+            @wraps(func)
+            def inner(nbytes, *args, **kwargs):
 
-            self._increment_malloc(nbytes)
+                saved_self._increment_malloc(nbytes)
 
-            return saved_allocator(nbytes)
+                return func(nbytes, *args, **kwargs)
 
-        rmm.rmm_cupy_allocator = counting_rmm_allocator
+            return inner
 
-        cp.cuda.set_allocator(counting_rmm_allocator)
+
+        rmm.rmm_cupy_allocator = tracked_rmm_cupy_allocator(rmm.rmm_cupy_allocator)
+        cp.cuda.set_allocator(rmm.rmm_cupy_allocator)
 
         # Finally, Monkeypatch the CumlArray.to_output and input_to_cuml_array
         import cuml.common.array
         import cuml.common.input_utils
-
-        saved_self = self
 
         def tracked_to_output(func: _F) -> _F:
             @wraps(func)
@@ -444,92 +473,46 @@ class CheckMemoryPlugin(object):
 
         self._total_memory_alloc.increment_cupy_alloc(nbytes=nbytes)
 
-    @pytest.hookimpl(hookwrapper=True, trylast=True)
-    def pytest_runtest_call(self, item: _pytest.nodes.Item):
-        # @pytest.fixture(scope="function", autouse=True)
-        # def cupy_allocator_fixture(self, request):
+    @contextlib.contextmanager
+    def _push_tracking_cm(self, test_memory_node: MemoryNode):
 
-        # Set a bad cupy allocator that will fail if rmm.rmm_cupy_allocator is
-        # not used
-        def bad_allocator(nbytes):
+        import cupy as cp
+        import rmm
 
-            assert False, \
-                "Using default cupy allocator. Use rmm.rmm_cupy_allocator"
-
-        # Disable creating cupy arrays
-        # cp.cuda.set_allocator(bad_allocator)
-        cp.cuda.set_allocator(rmm.rmm_cupy_allocator)
-
-        allocations = {}
-        memory = {
-            "outstanding": 0,
-            "peak": 0,
-            "count": 0,
-            "nbytes": 0,
-            "streams": {
-                0: 0,
-            }
-        }
-
-        def print_mr(is_alloc: bool, mem_ptr, n_bytes: int, stream_ptr):
-
-            print("{},{},0x{:x},{},{}".format(
-                datetime.datetime.now().strftime("%H:%M:%S.%f"),
-                "allocate" if is_alloc else "free",
-                mem_ptr,
-                n_bytes,
-                stream_ptr,
-            ))
-
-            if (stream_ptr not in memory["streams"]):
-                memory["streams"][stream_ptr] = 0
-
-            if (is_alloc):
-                assert mem_ptr not in allocations
-                allocations[mem_ptr] = n_bytes
-                memory["outstanding"] += n_bytes
-                memory["peak"] = max(memory["outstanding"], memory["peak"])
-                memory["count"] += 1
-                memory["nbytes"] += n_bytes
-                memory["streams"][stream_ptr] += n_bytes
-            else:
-                # assert mem_ptr in allocations
-                popped_nbytes = allocations.pop(mem_ptr, 0)
-                memory[
-                    "outstanding"] -= n_bytes if n_bytes > 0 else popped_nbytes
-
-        # callback_mr.set_callback(print_mr)
-
-        # global_alloc_counts_pre = global_tracked_mr.get_allocation_counts()
-
-        # old_mr = rmm.mr.get_current_device_resource()
+        old_mr = rmm.mr.get_current_device_resource()
+        old_cupy_alloc = rmm.rmm_cupy_allocator
 
         try:
-            # tracked_mr = rmm.mr.TrackingMemoryResource(old_mr, True)
+            tracked_mr = rmm.mr.TrackingMemoryResource(old_mr, False)
 
-            # rmm.mr.set_current_device_resource(tracked_mr)
+            rmm.mr.set_current_device_resource(tracked_mr)
 
-            self.global_tracked_mr.push_allocation_counts()
+            def tracked_rmm_cupy_allocator(func: _F) -> _F:
 
-            self._test_memory_alloc = self.test_memory_info["root"].get_child(
-                item.nodeid)
+                innermost = func
 
-            # import cuml
-            import cupy
+                while(hasattr(innermost, "__wrapped__")):
+                    innermost = innermost.__wrapped__
 
-            # cuml.cuda.nvtx_range_push(item.nodeid)
-            cupy.cuda.nvtx.RangePush(item.nodeid)
+                @wraps(func)
+                def inner(nbytes, *args, **kwargs):
 
-            yield
+                    test_memory_node.increment_cupy_alloc(nbytes)
 
-            # cuml.cuda.nvtx_range_pop()
-            cupy.cuda.nvtx.RangePop()
+                    return innermost(nbytes, *args, **kwargs)
 
-            import gc
+                return inner
 
+            cupy.cuda.set_allocator()
+            rmm.rmm_cupy_allocator = tracked_rmm_cupy_allocator(rmm.rmm_cupy_allocator)
+
+            yield test_memory_node
+
+            # Force a collection to unload any allocated memory
             gc.collect()
 
-            temp_alloc_info = self.global_tracked_mr.pop_allocation_counts()
+            # temp_alloc_info = self.global_tracked_mr.pop_allocation_counts()
+            temp_alloc_info = tracked_mr.get_total_allocation_counts()
 
             alloc_info = {
                 "peak": temp_alloc_info["peak_bytes"],
@@ -541,16 +524,85 @@ class CheckMemoryPlugin(object):
             # if (alloc_info["outstanding"] > 0):
             #     print(self.global_tracked_mr.get_outstanding_allocations_str())
 
-            self._test_memory_alloc.set_rmm_alloc_info(alloc_info)
-
-            self.test_memory_info[item.nodeid] = self._test_memory_alloc
+            test_memory_node.set_rmm_alloc_info(alloc_info)
 
         finally:
-            # rmm.mr.set_current_device_resource(old_mr)
-            self._test_memory_alloc = None
+
+            # Unwind the changes
+            rmm.rmm_cupy_allocator = old_cupy_alloc
+
+            rmm.mr.set_current_device_resource(old_mr)
 
             # Reset creating cupy arrays
-            cp.cuda.set_allocator(None)
+            # cp.cuda.set_allocator(None)
+
+    def _get_memory_node(self, node: _pytest.nodes.Item):
+
+        nodeid = node.nodeid
+
+        if (nodeid == ""):
+            return self._root_node
+
+        return self._root_node.get_child2(nodeid)
+
+    def _run_fixture(self, node: _pytest.nodes.Item):
+
+        test_memory_node = self._get_memory_node(node)
+
+        if (node.nodeid not in self._tracked_nodes):
+
+            # Save the memory_info
+            self._tracked_nodes.append(node.nodeid)
+
+            return self._push_tracking_cm(test_memory_node)
+        else:
+            return contextlib.nullcontext(test_memory_node)
+
+    @pytest.fixture(scope="session", autouse=True)
+    def session_fixture(self, request: _pytest.fixtures.FixtureRequest):
+
+        with self._run_fixture(request.node) as tracking:
+
+            yield
+
+    @pytest.fixture(scope="package", autouse=True)
+    def package_fixture(self, request: _pytest.fixtures.FixtureRequest):
+
+        with self._run_fixture(request.node) as tracking:
+
+            yield
+
+    @pytest.fixture(scope="module", autouse=True)
+    def module_fixture(self, request: _pytest.fixtures.FixtureRequest):
+
+        with self._run_fixture(request.node) as tracking:
+
+            yield
+
+        self.completed_modules[tracking.name] = tracking
+
+    @pytest.fixture(scope="class", autouse=True)
+    def class_fixture(self, request: _pytest.fixtures.FixtureRequest):
+
+        with self._run_fixture(request.node) as tracking:
+
+            yield
+
+    # @pytest.fixture(scope="function", autouse=True)
+    # def function_fixture(self, request: _pytest.fixtures.FixtureRequest):
+
+    #     with self._run_fixture(request.node) as tracking:
+
+    #         yield
+
+    @pytest.hookimpl(hookwrapper=True, trylast=True)
+    def pytest_runtest_call(self, item: _pytest.nodes.Item):
+
+        with self._run_fixture(item) as tracking:
+
+            yield
+
+        self.completed_tests[tracking.name] = tracking
 
     def pytest_terminal_summary(
             self, terminalreporter: _pytest.terminal.TerminalReporter):
@@ -559,7 +611,7 @@ class CheckMemoryPlugin(object):
                              PythonLexer(),
                              TerminalFormatter(bg="dark")).rstrip("\n")
 
-        root_node = self.test_memory_info["root"]
+        root_node = self._root_node
 
         terminalreporter.write_sep("=", "CumlArray Summary")
 
@@ -577,7 +629,7 @@ class CheckMemoryPlugin(object):
             filter(
                 lambda x: "outstanding" in x[1].rmm_alloc_info and x[1].
                 rmm_alloc_info["outstanding"] > 0,
-                self.test_memory_info.items()))
+                self.completed_tests.items()))
 
         if (len(have_outstanding) > 0):
             terminalreporter.write_line("Memory leak in the following tests:",
@@ -623,7 +675,7 @@ class CheckMemoryPlugin(object):
 
         terminalreporter.write_sep(
             "_", "Largest Peak Allocations ({})".format(max_peak))
-        for key, memory in sorted(self.test_memory_info.items(),
+        for key, memory in sorted(self.completed_tests.items(),
                                   key=lambda x: -x[1].rmm_alloc_info["peak"]):
 
             # default_stream_nbytes = (memory.rmm_alloc_info["streams"][0] /
@@ -675,7 +727,7 @@ class CheckMemoryPlugin(object):
 
                 outfile.write("\n")
 
-            print_node(self.test_memory_info["root"],
+            print_node(self._root_node,
                        print_fn=_print_line,
                        leaf_lines=False)
 
