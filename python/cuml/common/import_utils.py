@@ -129,6 +129,13 @@ def has_shap(min_version=None):
     except ImportError:
         return False
 
+def has_numpydoc():
+    try:
+        import numpydoc   # NOQA
+        return True
+    except ImportError:
+        return False
+
 
 def dummy_function_always_false(*args, **kwargs):
     return False

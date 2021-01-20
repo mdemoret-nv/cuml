@@ -13,7 +13,9 @@
 # limitations under the License.
 #
 
+from functools import reduce
 import inspect
+import sys
 
 import cuml
 import pytest
@@ -24,6 +26,15 @@ from cuml._thirdparty.sklearn.utils.skl_dependencies import BaseEstimator
 
 all_base_children = get_classes_from_package(cuml, import_sub_packages=True)
 
+
+def test_doc_gen():
+    from mypy.stubgen import generate_stubs, Options, parse_options
+
+    opt = parse_options([])
+
+    opt.modules = ["cuml.cluster.dbscan"]
+
+    generate_stubs(opt)
 
 def test_base_class_usage():
     # Ensure base class returns the 3 main properties needed by all classes
@@ -89,8 +100,8 @@ def test_base_subclass_init_matches_docs(child_class: str):
     """
     klass = all_base_children[child_class]
 
-    if issubclass(klass, BaseEstimator):
-        pytest.skip("Exemption for preprocessing models")
+    # if issubclass(klass, BaseEstimator):
+    #     pytest.skip("Exemption for preprocessing models")
 
     # To quickly find and replace all instances in the documentation, the below
     # regex's may be useful
@@ -113,7 +124,20 @@ def test_base_subclass_init_matches_docs(child_class: str):
 
     # Load the current class signature, parse the docstring and pull out params
     klass_sig = inspect.signature(klass, follow_wrapped=True)
-    klass_doc = numpydoc.docscrape.NumpyDocString(klass.__doc__ or "")
+
+    klass_docstring = inspect.getdoc(klass) or ""
+
+    # if (klass_docstring.find("\n") != -1):
+    #     klass_docstr_indents = [
+    #         len(x) - len(x.lstrip()) for x in klass_docstring.splitlines() if len(x) > 0
+    #     ]
+
+    #     min_indent_after_first = reduce((lambda x, y: min(x, y)), klass_docstr_indents[1:])
+
+    #     if (min_indent_after_first > klass_docstr_indents[0]):
+    #         klass_docstring = (" " * min_indent_after_first) + klass_docstring
+
+    klass_doc = numpydoc.docscrape.NumpyDocString(klass_docstring)
     klass_doc_params = klass_doc["Parameters"]
 
     for name, param in base_sig.parameters.items():
@@ -144,7 +168,6 @@ def test_base_subclass_init_matches_docs(child_class: str):
 
 @pytest.mark.parametrize('child_class', list(all_base_children.keys()))
 def test_base_children_get_param_names(child_class: str):
-
     """
     This test ensures that the arguments in `Base.__init__` are available in
     all derived classes `get_param_names`

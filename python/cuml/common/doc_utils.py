@@ -432,3 +432,69 @@ def insert_into_docstring(parameters=False,
 
         return func
     return deco
+
+import numpydoc.docscrape
+
+class CumlDocString(numpydoc.docscrape.NumpyDocString):
+
+    def get_parameter(self, name: str):
+        parameters = self["Parameters"]
+
+        return next((x for x in parameters if x.name == name), None)
+
+    def update_parameter(self, param: numpydoc.docscrape.Parameter):
+
+        parameters = self["Parameters"]
+
+        found_param = self.get_parameter(param.name)
+
+        found_idx = parameters.index(found_param)
+
+        parameters[found_idx] = param
+
+
+    def add_parameter(self, param: numpydoc.docscrape.Parameter, update=False):
+
+        parameters = self["Parameters"]
+
+        # See if it already exists
+        found_param = self.get_parameter(param.name)
+
+        if (found_param):
+            if (update):
+                self.update_parameter(param)
+        else:
+            parameters.append(param)
+
+    def _str_see_also(self, func_role):
+        # Override the base to remove linking functionality. Easier to just copy the implementation than to call super()
+        if not self['See Also']:
+            return []
+        out = []
+        out += self._str_header("See Also")
+        out += ['']
+        last_had_desc = True
+        for funcs, desc in self['See Also']:
+            assert isinstance(funcs, list)
+            links = []
+            for func, role in funcs:
+                if role:
+                    link = ':%s:`%s`' % (role, func)
+                elif func_role:
+                    link = ':%s:`%s`' % (func_role, func)
+                else:
+                    link = "%s" % func
+                links.append(link)
+            link = ', '.join(links)
+            out += [link]
+            if desc:
+                out += self._str_indent([' '.join(desc)])
+                last_had_desc = True
+            else:
+                last_had_desc = False
+                out += self._str_indent([self.empty_description])
+
+        if last_had_desc:
+            out += ['']
+        out += ['']
+        return out

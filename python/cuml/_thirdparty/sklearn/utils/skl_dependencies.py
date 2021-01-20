@@ -14,25 +14,25 @@ require a version-dependent import from the sklearn library
 # Authors mentioned above do not endorse or promote this production.
 
 
+from functools import wraps
 from ....common.base import Base
 from ..utils.validation import check_X_y
 from ....thirdparty_adapters import check_array
-
+from cuml.internals.api_decorators import mirror_args
 
 class BaseEstimator(Base):
-    """Base class for all estimators in scikit-learn
-
-    Notes
-    -----
-    All estimators should specify all the parameters that can be set
-    at the class level in their ``__init__`` as explicit keyword
-    arguments (no ``*args`` or ``**kwargs``).
-    """
 
     def __init_subclass__(cls):
         orig_init = cls.__init__
 
-        def init(self, *args, **kwargs):
+        import inspect
+        import numpydoc.docscrape
+        from cuml.common.doc_utils import CumlDocString
+
+        orig_sig = inspect.signature(orig_init)
+
+        @wraps(orig_init)
+        def init(self, /, *args, handle=None, verbose=False, output_type=None, **kwargs):
             handle = kwargs['handle'] if 'handle' in kwargs else None
             verbose = kwargs['verbose'] if 'verbose' in kwargs else False
             output_type = kwargs['output_type'] if 'output_type' in kwargs \
@@ -44,7 +44,41 @@ class BaseEstimator(Base):
                     del kwargs[param]
             orig_init(self, *args, **kwargs)
 
+        base_sig = inspect.signature(Base.__init__)
+        sig = inspect.signature(init)
+        unwrap_sig = inspect.signature(init, follow_wrapped=False)
+
+        base_doc = CumlDocString(inspect.getdoc(Base))
+
+        new_params = list(inspect.signature(init).parameters.values())
+        new_doc = CumlDocString(inspect.getdoc(cls))
+        new_doc_params = new_doc["Parameters"]
+
+        insert_idx = 0
+
+        # First, find the place to insert keyword args. Will be last place before VAR_KEYWORD
+        for insert_idx, param in enumerate(new_params):
+            if (param.kind == param.VAR_KEYWORD):
+                insert_idx -= 1
+                break
+
+        insert_idx += 1
+
+        for param in unwrap_sig.parameters.values():            
+            if (param.kind != param.KEYWORD_ONLY):
+                continue
+
+            if (param.name not in sig.parameters.keys()):
+                # Insert into new_params
+                new_params.insert(insert_idx, param.replace())
+                insert_idx += 1
+
+            new_doc.add_parameter(base_doc.get_parameter(param.name), update=True)
+        
+        init.__signature__ = sig.replace(parameters=new_params)
+
         cls.__init__ = init
+        cls.__doc__ = str(new_doc)
 
     @classmethod
     def _check_n_features(self, X, reset):
