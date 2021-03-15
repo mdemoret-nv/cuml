@@ -171,6 +171,7 @@ LONG_ARGUMENT_LIST=(
     "show_depr_warn"
     "codecov"
     "cuda:"
+    "clang"
 )
 
 # Short arguments
@@ -232,6 +233,11 @@ while true; do
         --cuda )  
             shift
             CUDA=$1
+            ;;
+        --clang )  
+            export CC="clang"
+            export CXX="clang++"
+            export CUDACXX="clang++"
             ;;
         --)
             shift

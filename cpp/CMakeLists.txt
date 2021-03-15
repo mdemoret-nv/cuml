@@ -206,9 +206,10 @@ set(CMAKE_MODULE_PATH ${CMAKE_CURRENT_BINARY_DIR}/cmake)
 set(USE_OPENMP OFF)
 
 if (NOT DISABLE_OPENMP OR NOT ${DISABLE_OPENMP})
+  message("Finding OpenMP")
   find_package(OpenMP)
   if(OpenMP_FOUND)
-    message(STATUS "OpenMP found in ${OPENMP_INCLUDE_DIRS}")
+    message(STATUS "OpenMP found in ${OpenMP_INCLUDE_DIRS}")
     set(USE_OPENMP ON)
   endif(OpenMP_FOUND)
 endif(NOT DISABLE_OPENMP OR NOT ${DISABLE_OPENMP})
@@ -350,9 +351,9 @@ set(CUML_SRC_DIR ${CMAKE_CURRENT_SOURCE_DIR}/src)
 set(CUML_SRC_PRIMS_DIR ${CMAKE_CURRENT_SOURCE_DIR}/src_prims)
 set(CUML_TEST_PRIMS_DIR ${CMAKE_CURRENT_SOURCE_DIR}/test/prims)
 
-if(NOT CUB_IS_PART_OF_CTK)
-  list(APPEND CUML_INCLUDE_DIRECTORIES ${CUB_DIR}/src/cub)
-endif(NOT CUB_IS_PART_OF_CTK)
+# if(NOT CUB_IS_PART_OF_CTK)
+#   list(APPEND CUML_INCLUDE_DIRECTORIES ${CUB_DIR}/src/cub)
+# endif(NOT CUB_IS_PART_OF_CTK)
 
 # set(CUML_PUBLIC_LINK_LIBRARIES
 #   CUDA::cublas
@@ -483,21 +484,24 @@ if(BUILD_CUML_CPP_LIBRARY)
     PUBLIC
       $<$<BOOL:${NVTX}>:NVTX_ENABLED>
       DISABLE_CUSPARSE_DEPRECATED
+      $<$<CUDA_COMPILER_ID:Clang>:__STRICT_ANSI__>
     PRIVATE
       CUML_CPP_API
   )
 
   target_compile_options(${CUML_CPP_TARGET}
     PUBLIC 
-      $<$<COMPILE_LANGUAGE:CUDA>:--expt-extended-lambda
-                                 --expt-relaxed-constexpr
-                                 -Xcudafe
-                                 --diag_suppress=unrecognized_gcc_pragma
-                                 -ccbin ${CMAKE_CXX_COMPILER}>
+      $<$<AND:$<CUDA_COMPILER_ID:NVIDIA>,$<COMPILE_LANGUAGE:CUDA>>:
+        --expt-extended-lambda
+        --expt-relaxed-constexpr
+        -Xcudafe
+        --diag_suppress=unrecognized_gcc_pragma
+        -ccbin ${CMAKE_CXX_COMPILER}>
       
     PRIVATE
       $<$<AND:$<BOOL:${LINE_INFO}>,$<COMPILE_LANGUAGE:CUDA>>:-lineinfo>
       $<$<AND:$<BOOL:${KERNEL_INFO}>,$<COMPILE_LANGUAGE:CUDA>>:-Xptxas=-v>
+      $<$<CUDA_COMPILER_ID:Clang>:-Wno-everything>
   )
 
   target_include_directories(${CUML_CPP_TARGET}
