@@ -16,9 +16,18 @@
 
 set (CMAKE_FIND_NO_INSTALL_PREFIX TRUE FORCE)
 
-cmake_minimum_required(VERSION 3.17...3.19 FATAL_ERROR)
+cmake_minimum_required(VERSION 3.18...3.19 FATAL_ERROR)
 
-project(CUML VERSION 0.18.0 LANGUAGES C CXX)
+# This needs to be run before enabling the CUDA language due to the default initialization behavior
+# of `CMAKE_CUDA_ARCHITECTURES`, https://gitlab.kitware.com/cmake/cmake/-/issues/21302
+if(CMAKE_CUDA_ARCHITECTURES STREQUAL "ALL")
+  set(CUML_BUILD_FOR_ALL_ARCHS TRUE)
+  set(CMAKE_CUDA_ARCHITECTURES "")
+elseif(CMAKE_CUDA_ARCHITECTURES STREQUAL "" OR NOT DEFINED CMAKE_CUDA_ARCHITECTURES)
+  set(CUML_BUILD_FOR_DETECTED_ARCHS TRUE)
+endif()
+
+project(CUML VERSION 0.19.0 LANGUAGES C CXX)
 
 ##############################################################################
 # - build type ---------------------------------------------------------------
@@ -162,6 +171,11 @@ if(BUILD_CUML_MG_TESTS AND NOT SINGLEGPU)
 endif(BUILD_CUML_MG_TESTS AND NOT SINGLEGPU)
 
 ##############################################################################
+# - Compiler Options  --------------------------------------------------------
+
+include(cmake/modules/ConfigureCUDA.cmake)
+
+##############################################################################
 # - Requirements -------------------------------------------------------------
 
 # Create FindPackage.cmake files to use find(package) functionality for
@@ -225,108 +239,6 @@ endif()
 
 set(CUML_INCLUDE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/include CACHE STRING
   "Path to cuml include directories")
-
-##############################################################################
-# - Compiler Options  --------------------------------------------------------
-
-set(CMAKE_CXX_STANDARD 14)
-set(CMAKE_CXX_STANDARD_REQUIRED ON)
-
-if(CMAKE_CUDA_HOST_COMPILER)
-  # If CMAKE_CUDA_HOST_COMPILER is set to a nonempty string cmake was called with the environment variable CUDAHOSTCXX set or -DCMAKE_CUDA_HOST_COMPILER
-  if(NOT CMAKE_CUDA_HOST_COMPILER STREQUAL CMAKE_CXX_COMPILER)
-    message(WARNING "CMAKE_CUDA_HOST_COMPILER=${CMAKE_CUDA_HOST_COMPILER} and CMAKE_CXX_COMPILER=${CMAKE_CXX_COMPILER} are inconsistent!")
-  endif(NOT CMAKE_CUDA_HOST_COMPILER STREQUAL CMAKE_CXX_COMPILER)
-else()
-  # No attempt to set CMAKE_CUDA_HOST_COMPILER has been made. Make sure CMAKE_CXX_COMPILER is used as CUDA host compiler.
-  # set(CMAKE_CUDA_FLAGS "${CMAKE_CUDA_FLAGS} -ccbin ${CMAKE_CXX_COMPILER}")
-  set(CMAKE_CUDA_HOST_COMPILER ${CMAKE_CXX_COMPILER})
-endif(CMAKE_CUDA_HOST_COMPILER)
-
-if(USE_OPENMP)
-  message(STATUS "Building with OpenMP support")
-  find_package(Threads REQUIRED)
-  # set(CMAKE_CUDA_FLAGS "${CMAKE_CUDA_FLAGS} -Xcompiler ${OpenMP_CXX_FLAGS}")
-  # set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${OpenMP_CXX_FLAGS}")
-endif(USE_OPENMP)
-
-# set(CMAKE_CUDA_FLAGS "${CMAKE_CUDA_FLAGS} --expt-extended-lambda --expt-relaxed-constexpr")
-
-# if(${CMAKE_VERSION} VERSION_LESS "3.17.0")
-#   set(CMAKE_CUDA_FLAGS "${CMAKE_CUDA_FLAGS} --std=c++14")
-# endif(${CMAKE_VERSION} VERSION_LESS "3.17.0")
-
-# if(LINE_INFO)
-#   set(CMAKE_CUDA_FLAGS "${CMAKE_CUDA_FLAGS} -lineinfo")
-# endif(LINE_INFO)
-
-# if(KERNEL_INFO)
-#   set(CMAKE_CUDA_FLAGS "${CMAKE_CUDA_FLAGS} -Xptxas=-v")
-# endif(KERNEL_INFO)
-
-# if(NVTX)
-#   set(CMAKE_CUDA_FLAGS "${CMAKE_CUDA_FLAGS} -DNVTX_ENABLED")
-#   set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -DNVTX_ENABLED")
-#   set(CMAKE_CUDA_FLAGS "${CMAKE_CUDA_FLAGS}")
-# endif(NVTX)
-
-# if(CMAKE_BUILD_TYPE MATCHES Debug)
-#   set(CMAKE_CUDA_FLAGS "${CMAKE_CUDA_FLAGS} -G -g")
-#   set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -g")
-# endif()
-
-# todo: change for FindCUDAToolkit when CMake 3.17 is the minimum required
-# https://github.com/rapidsai/cuml/issues/2194
-find_package(CUDAToolkit 10.0 REQUIRED)
-
-# Set the -isystem flag to not have an '=' sign to allow parsing of compile_commands.json
-set(CMAKE_INCLUDE_SYSTEM_FLAG_CUDA "-isystem ")
-
-# Determine the GPU Arches to build for
-if("${GPU_ARCHS}" STREQUAL "")
-  include(cmake/EvalGpuArchs.cmake)
-  evaluate_gpu_archs(GPU_ARCHS)
-endif()
-
-# CUDA 11 onwards cub ships with CTK
-if((CUDAToolkit_VERSION_MAJOR EQUAL 11) OR (CUDAToolkit_VERSION_MAJOR GREATER 11))
-  set(CUB_IS_PART_OF_CTK ON)
-else()
-  set(CUB_IS_PART_OF_CTK OFF)
-endif()
-
-if("${GPU_ARCHS}" STREQUAL "ALL")
-  set(GPU_ARCHS "60")
-  if((CUDAToolkit_VERSION_MAJOR EQUAL 9) OR (CUDAToolkit_VERSION_MAJOR GREATER 9))
-    set(GPU_ARCHS "${GPU_ARCHS};70")
-  endif()
-  if((CUDAToolkit_VERSION_MAJOR EQUAL 10) OR (CUDAToolkit_VERSION_MAJOR GREATER 10))
-    set(GPU_ARCHS "${GPU_ARCHS};75")
-  endif()
-  if((CUDAToolkit_VERSION_MAJOR EQUAL 11) OR (CUDAToolkit_VERSION_MAJOR GREATER 11))
-    set(GPU_ARCHS "${GPU_ARCHS};80")
-  endif()
-endif()
-
-message("-- Building for GPU_ARCHS = ${GPU_ARCHS}")
-
-foreach(arch ${GPU_ARCHS})
-  # set(CMAKE_CUDA_FLAGS "${CMAKE_CUDA_FLAGS} -gencode arch=compute_${arch},code=sm_${arch}")
-  set(FAISS_GPU_ARCHS "${FAISS_GPU_ARCHS} -gencode arch=compute_${arch},code=sm_${arch}")
-endforeach()
-
-list(GET GPU_ARCHS -1 ptx)
-# set(CMAKE_CUDA_FLAGS "${CMAKE_CUDA_FLAGS} -gencode arch=compute_${ptx},code=compute_${ptx}")
-set(FAISS_GPU_ARCHS "${FAISS_GPU_ARCHS} -gencode arch=compute_${ptx},code=compute_${ptx}")
-
-# Clear any existing value in CMAKE_CUDA_ARCHITECTURES
-set(CMAKE_CUDA_ARCHITECTURES "${GPU_ARCHS}")
-
-# set(CMAKE_CUDA_FLAGS
-#   "${CMAKE_CUDA_FLAGS} -Xcudafe --diag_suppress=unrecognized_gcc_pragma")
-
-# Now that CUDA is configured. Enable the language
-enable_language(CUDA)
 
 ##############################################################################
 # - dependencies -------------------------------------------------------------
@@ -479,6 +391,17 @@ if(BUILD_CUML_CPP_LIBRARY)
   #   link_directories(${CUDA_TOOLKIT_ROOT_DIR}/lib64)
   # endif(NVTX)
 
+  set_target_properties(${CUML_CPP_TARGET}
+    PROPERTIES BUILD_RPATH                         "\$ORIGIN"
+               # set target compile options
+               CXX_STANDARD                        14
+               CXX_STANDARD_REQUIRED               ON
+               CUDA_STANDARD                       14
+               CUDA_STANDARD_REQUIRED              ON
+               POSITION_INDEPENDENT_CODE           ON
+               INTERFACE_POSITION_INDEPENDENT_CODE ON
+  )
+
   target_compile_definitions(${CUML_CPP_TARGET}
     PUBLIC
       $<$<BOOL:${NVTX}>:NVTX_ENABLED>
@@ -488,13 +411,13 @@ if(BUILD_CUML_CPP_LIBRARY)
   )
 
   target_compile_options(${CUML_CPP_TARGET}
-    PUBLIC 
+    PUBLIC
       $<$<COMPILE_LANGUAGE:CUDA>:--expt-extended-lambda
                                  --expt-relaxed-constexpr
                                  -Xcudafe
                                  --diag_suppress=unrecognized_gcc_pragma
                                  -ccbin ${CMAKE_CXX_COMPILER}>
-      
+
     PRIVATE
       $<$<AND:$<BOOL:${LINE_INFO}>,$<COMPILE_LANGUAGE:CUDA>>:-lineinfo>
       $<$<AND:$<BOOL:${KERNEL_INFO}>,$<COMPILE_LANGUAGE:CUDA>>:-Xptxas=-v>
@@ -567,7 +490,7 @@ if(BUILD_CUML_C_LIBRARY)
   #     CUML_C_API)
 
   # target_include_directories(${CUML_C_TARGET}
-  #   PRIVATE 
+  #   PRIVATE
   #     ${CUML_SRC_DIR}
   # )
 
@@ -575,7 +498,7 @@ if(BUILD_CUML_C_LIBRARY)
     PUBLIC
       ${CUML_CPP_TARGET}
   )
-  
+
 endif(BUILD_CUML_C_LIBRARY)
 
 ##############################################################################
@@ -630,7 +553,7 @@ install(
   NAMESPACE CUML::
   DESTINATION ${INSTALL_CONFIGDIR})
 
-install(FILES ${CMAKE_CURRENT_BINARY_DIR}/cuml-config.cmake 
+install(FILES ${CMAKE_CURRENT_BINARY_DIR}/cuml-config.cmake
               ${CMAKE_CURRENT_BINARY_DIR}/cuml-config-version.cmake
               ${CMAKE_CURRENT_LIST_DIR}/cmake/FindRMM.cmake
         DESTINATION ${INSTALL_CONFIGDIR})
