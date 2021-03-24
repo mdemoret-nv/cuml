@@ -207,29 +207,29 @@ while true; do
         -n | --no-install )
             INSTALL_TARGET=""
             ;;
-        --allgpuarch )  
+        --allgpuarch )
             BUILD_ALL_GPU_ARCH=1
             ;;
-        --singlegpu )  
+        --singlegpu )
             CUML_EXTRA_PYTHON_ARGS="${CUML_EXTRA_PYTHON_ARGS} --singlegpu"
             SINGLEGPU_CPP_FLAG=ON
             ;;
-        --buildfaiss )  
+        --buildfaiss )
             BUILD_STATIC_FAISS=ON
             ;;
-        --buildgtest )  
+        --buildgtest )
             BUILD_GTEST=ON
             ;;
-        --nvtx )  
+        --nvtx )
             NVTX=ON
             ;;
-        --show_depr_warn )  
+        --show_depr_warn )
             BUILD_DISABLE_DEPRECATION_WARNING=OFF
             ;;
-        --codecov )  
+        --codecov )
             CUML_EXTRA_PYTHON_ARGS="${CUML_EXTRA_PYTHON_ARGS} --linetrace=1 --profile"
             ;;
-        --cuda )  
+        --cuda )
             shift
             CUDA=$1
             ;;
@@ -260,7 +260,7 @@ if (( ${CLEAN} == 1 )); then
     cd ${REPODIR}
 fi
 
-# Before 
+# Before
 
 ################################################################################
 # Configure for building all C++ targets
@@ -269,7 +269,7 @@ if completeBuild || hasArg libcuml || hasArg prims || hasArg bench || hasArg pri
         GPU_ARCH=""
         echo "Building for the architecture of the GPU in the system..."
     else
-        GPU_ARCH="-DGPU_ARCHS=ALL"
+        GPU_ARCH="-DCMAKE_CUDA_ARCHITECTURES=ALL"
         echo "Building for *ALL* supported GPU architectures..."
     fi
 
